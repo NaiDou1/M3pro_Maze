@@ -196,3 +196,46 @@ simplePID.compute(target, current) / .reset()
 | 出口判定区域的物理形式与识别方式 | 赛前问组委会/现场观察 |
 | 罚时系数表（深度 × 颜色 × 基准速度） | 赛前获取 |
 | 走廊居中（激光）精度能否优于 ±5cm | 实测跑直线统计横向偏差 |
+
+---
+
+## 9. 版本管理（双仓库，各自独立）
+
+本项目用**两个独立 git 仓库**分别管理文档与代码，互不隶属：
+
+| 仓库 | 路径 | 管理内容 |
+|---|---|---|
+| **文档仓库** | `/home/jetson/Desktop`（`.git` 位于 Desktop 根） | `M3Pro_Maze/AGENTS.md`、`M3Pro_Maze/PLAN.md`、`.gitignore` |
+| **代码仓库** | `/home/jetson/yahboomcar_ws/src/maze_explorer` | 自研 ROS 2 包源码（本项目的全部代码） |
+
+### 为什么分成两个仓库
+
+ROS 2 包必须位于 colcon 工作区的 `src/` 下，才能被 `colcon build` 发现并构建。若把代码搬进 Desktop 文档仓库，就必须改用 `colcon build --base-paths` 并将 `build/`、`install/`、`log/` 一并搬过去，导致文档仓库混入 MB 级构建产物。而文档与代码的改动节奏、评审方式本就不同，**分仓更清晰**。
+
+曾评估过合并方案（代码放 Desktop 仓库 + `--base-paths` 构建），已否决，按双仓库执行。
+
+### 不纳入版本管理（两个仓库都要忽略）
+
+- **厂商/第三方代码**：`OrbbecSDK_ROS2`、`yahboom_yolov8`、`M3Pro_demo`、`M3Pro_core`、`yahboom_M3Pro_laser` 等——非本项目产出，且体积巨大，**绝不入库**
+- **ROS 构建产物**：`build/`、`install/`、`log/`
+- **Orbbec SDK 运行日志**：`Log/`、`*.log`（每次运行都会变化）
+- **Python 缓存**：`__pycache__/`、`*.pyc`
+
+### 代码仓库初始化
+
+在阶段 1 创建包骨架时执行：
+
+```bash
+cd /home/jetson/yahboomcar_ws/src/maze_explorer
+git init
+# 写入 .gitignore：build/ install/ log/ __pycache__/ *.pyc *.log
+git add -A && git commit -m "..."
+```
+
+⚠️ 只对 `maze_explorer` 目录建仓库，**不要**对整个 `yahboomcar_ws` 执行 `git init`（会把全部厂商代码和构建产物卷进去）。
+
+### 提交约定
+
+- 两仓各自独立提交，互不影响；不做 submodule 关联
+- 代码仓库以**功能模块**为单位提交，一次一个模块（如 `base_driver`、`line_detector`）
+- 两仓均**只做本地提交**，不配置 remote、不 push（除非明确要求）

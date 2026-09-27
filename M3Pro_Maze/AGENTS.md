@@ -157,6 +157,19 @@ simplePID.compute(target, current) / .reset()
 
 ## 6. 编码约定
 
+### 6.1 代码风格
+
+- 基线：**PEP 8**，`ament_flake8` + `ament_pep257` 必须过检（本机已装）；4 空格缩进，无 Tab
+- 命名：函数/变量 `snake_case`，类 `CamelCase`，常量 `UPPER_SNAKE`，模块名即节点名（`base_driver.py` → 节点 `base_driver`）
+- 文件头与现有 demo 一致：`#!/usr/bin/env python3` + `# -*- coding: utf-8 -*-`（仅脚本类入口需要）
+- 导入顺序：标准库 → 第三方(cv2/numpy/yaml) → ROS(rclpy/*_msgs) → 本包模块，每组内按字母序、组间空行分隔
+- 每个模块与 `class`、**公有方法**写 docstring（一句话概括 + 输入/输出）；私有函数不强制
+- 公有函数标注类型签名（`def pick_target(blocks: list[BlockTarget]) -> BlockTarget:`），不引入 mypy 依赖
+- 注释与日志用中文，遵守 §0 文风：一句一事实、数值带单位
+- 禁止：行尾多余空格、无用 import、`except:` 裸捕获、模块级可执行副作用（可执行逻辑进 `main()`）
+
+### 6.2 工程与 ROS 节点约定
+
 - **零侵入**：全部新增代码放 `maze_explorer` 包，**不修改任何现有包源码**
 - 控制环 **20Hz**（`create_timer(0.05)`）；闭环订阅 `/odom_raw`
 - 日志：状态迁移记 INFO、异常记 WARN，**禁止每帧打印**
@@ -236,6 +249,26 @@ git add -A && git commit -m "..."
 
 ### 提交约定
 
-- 两仓各自独立提交，互不影响；不做 submodule 关联
-- 代码仓库以**功能模块**为单位提交，一次一个模块（如 `base_driver`、`line_detector`）
+- **小步提交**：每完成一个可验证步骤（写码 / 单测通过 / 实机验证通过 / 文档同步）即提交，不攒大提交
+- 模块完成的提交，信息中标注模块名与验收结果
+- **commit message 格式**：`<type>(<scope>): <中文简述>`，type 取自下表，scope 为模块名（如 `base_driver`），简述 ≤50 字、用祈使句
+
+| type | 用途 |
+|---|---|
+| `feat` | 新增功能/模块 |
+| `fix` | 修 bug |
+| `test` | 新增/修改测试 |
+| `docs` | 仅文档（AGENTS/PLAN/README） |
+| `refactor` | 重构，不改行为 |
+| `chore` | 构建、依赖、配置、gitignore |
+| `perf` | 性能优化 |
+| `verify` | 实机验证记录/参数标定结果 |
+
+示例：
+```
+feat(line_detector): 黑线中心提取与压线遮挡状态
+test(dfs_planner): 后序遍历以出口为终点的单测
+verify(arm): joint6 开合角标定 30/135，单块节拍 7.4s
+```
+- 正文（可选）写"改了什么 + 依据/验收数据"；两仓各自独立提交，互不影响
 - 两仓均**只做本地提交**，不配置 remote、不 push（除非明确要求）

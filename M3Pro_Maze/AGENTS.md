@@ -272,3 +272,59 @@ verify(arm): joint6 开合角标定 30/135，单块节拍 7.4s
 ```
 - 正文（可选）写"改了什么 + 依据/验收数据"；两仓各自独立提交，互不影响
 - 两仓均**只做本地提交**，不配置 remote、不 push（除非明确要求）
+
+---
+
+## 10. 实现状态与两个入口（V2）
+
+### 10.1 实现状态
+
+代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现与 V2 缺陷修复。当前：**pytest 75/75 通过**、`colcon build` 通过、无硬件启动烟测通过。
+
+| 层 | 模块 | 状态 |
+|---|---|---|
+| 硬件抽象 | `base_driver` / `sensors` / `arm_controller` | 完成（含航向源开关 `yaw_source`） |
+| 感知 | `line_detector` / `block_detector` | 完成 |
+| 建图决策 | `grid_mapper` / `dfs_planner` | 完成 |
+| 控制 | `motion_controller` / `grasp_fsm` | 完成 |
+| 编排 | `mission_manager` | 完成（INIT/EXPLORE/APPROACH/GRASP/RETURN/FINISH/FAULT） |
+| 入口与工具 | `run_entry` / `calib_entry` / `calibration_tool` | 完成 |
+| 测试 | `test_perception` / `test_grid_mapper` / `test_dfs_planner` / `test_motion_scaling` / `test_approach` | 75 项 |
+
+说明：`PLAN.md` 中的 `DETECT` 状态已合入 `EXPLORE`（检测与探索在同一状态内），属实现简化、非缺陷；`score_logger` 尚未实现（如需记录成绩时间可后续补）。
+
+### 10.2 两个用户入口
+
+```bash
+# 入口 A：一键探索（先逐项自检，通过后自动开跑）
+ros2 run maze_explorer maze_run
+ros2 run maze_explorer maze_run --check-only    # 只自检不运动，首次务必先跑
+
+# 入口 B：现场标定（无参数进菜单，也可直达）
+ros2 run maze_explorer maze_calib
+ros2 run maze_explorer maze_calib hsv           # 或 line_pose / motion
+```
+
+其余 6 个入口（`mission_manager`、`calibration_tool`、`line_detector`、`block_detector`、`grid_mapper`、`arm_controller`）保留作调试用途。
+
+### 10.3 V2 修复的关键缺陷（防止踩回同一个坑）
+
+| 编号 | 问题 | 后果 |
+|---|---|---|
+| B1 | 运动原语内绕过注入的 spin 回调，直呼 `rclpy.spin_once(self._node, ...)` | odom 回调不执行 → 转向闭环失效、原地转到超时 |
+| B2 | 转向缩放用乘法（应为除法：真实转角 = 系数 × 读数 ⇒ 目标 = 期望 / 系数） | 90° 只转 67.5°，逐格累积撞墙 |
+| B3 | 远处方块立即对位，且对位仅 4 步 × 0.15m | 脱离格心打乱 DFS 拓扑；>0.8m 方块必然抓不到 |
+| B11 | `spin_until_future_complete(self, ...)` 与外部 executor 冲突 | 首次 IK 调用抛异常，抓取完全不可用 |
+
+其余 B4~B10 见代码提交记录。**B1/B2/B3 的语义已被回归测试锁定**（`test_motion_scaling.py` / `test_approach.py`）——改动相关逻辑后若这两个文件失败，说明踩回了旧坑。
+
+### 10.4 现场复验清单（V2 之后必须重做）
+
+| 项 | 为什么必须重做 |
+|---|---|
+| 黑线/四色 HSV | 现场光照与方块材质每次都不同 |
+| `odom_angular_scale_correction` | **默认已改为 1.0（不修正）**，必须用 `maze_calib motion` 实测后填写；若改用 `yaw_source:=odom` 需重新标 |
+| 机械臂巡线姿态 `line_pose` | 决定相机视角，装车后必标 |
+| 相机安装外参 `mount_xyz / mount_rpy` | 标定后可置 `mount_calibrated:=true`，否则抓取只用相机系近似 |
+| 车载收集筐与 `place_pose` | 收集筐固定方式与位置决定放置位姿 |
+| `detect_trigger_distance`（默认 0.60m） | 依相机实际视野与巡线姿态调整 |

@@ -1,0 +1,14 @@
+# Orbbec SDK / ROS 运行日志：体积大且每次运行都会变化，不入库
+Log/
+*.log
+
+# 构建产物与缓存
+build/
+install/
+__pycache__/
+*.pyc
+
+# 编辑器与系统临时文件
+*~
+*.swp
+.DS_Store

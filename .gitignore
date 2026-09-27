@@ -2,9 +2,10 @@
 Log/
 *.log
 
-# 构建产物与缓存
+# 构建产物与缓存（colcon 会在调用目录生成 log/）
 build/
 install/
+log/
 __pycache__/
 *.pyc
 

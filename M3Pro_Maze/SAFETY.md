@@ -210,6 +210,20 @@ set_velocity(非零)  ──feed──►  看门狗记录时刻
 | `colcon build --packages-select maze_explorer` | 通过 |
 | `ros2 run maze_explorer maze_run --check-only` | 正常输出四项自检 |
 | 改动文件 `ament_flake8` | 无违规 |
+| **看门狗端到端**（executor 完全不 spin，模拟主线程卡死） | **通过**：订阅者 t=0.001s 收到 `(0.15, 0, 0.10)`，t=0.318s 收到 `(0, 0, 0)`；`watchdog_trips=1` |
+
+端到端验证方法（脚本已执行，非推断）：起 `BaseDriver(watchdog_timeout=0.3)` 与一个订阅
+`/cmd_vel` 的监听节点，**监听节点在后台线程 spin，发布节点的 executor 永不 spin**；
+手动 `publish_now()` 把非零指令发出去（模拟下位机已锁存），然后主线程只 `sleep`。
+实测输出：
+
+```
+t=0.001s  linear.x= 0.150  angular.z= 0.100   ← 非零指令已上线
+t=0.318s  linear.x= 0.000  angular.z= 0.000   ← 看门狗独立线程归零
+[WARN] 看门狗触发：0.30s 未收到新的速度指令，已强制归零（累计 1 次）
+```
+
+这条链路正是 20Hz 定时器做不到的：定时器同样跑在 executor 上，主线程卡死时它一并停摆。
 
 ### 7.4 仍未覆盖的场景（务必记住）
 

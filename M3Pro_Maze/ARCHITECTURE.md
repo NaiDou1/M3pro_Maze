@@ -15,9 +15,9 @@
 | ③ 控制层 | `motion_controller.py`、`grasp_fsm.py` | 否（纯逻辑类） | 走格 / 转向 / 横移 / 抓取序列 |
 | ④ 感知层 | `line_detector.py`、`block_detector.py` | 否（各附一个调试节点） | 黑线偏差、四色方块三维定位 |
 | ⑤ 建图决策层 | `grid_mapper.py`、`dfs_planner.py` | 否（`grid_mapper` 附调试节点） | 7×7 拓扑、DFS 选向、BFS 返航 |
-| ⑥ 硬件抽象层 | `base_driver.py`、`sensors.py`、`arm_controller.py` | **是**（三个节点） | `/cmd_vel`、`/odom_raw`、RGB-D、`/scan`、关节与 IK |
+| ⑥ 硬件抽象层 | `base_driver.py`、`sensors.py`、`arm_controller.py` | **是**（三个节点） | `/cmd_vel`、`/odom_raw`、RGB-D、`/scan`、关节与 IK；**含速度看门狗与传感器保鲜度** |
 
-要点：③④⑤ 全是**不依赖 ROS 的纯 Python 类**，因此可离线单测（`test/` 689 行覆盖的就是它们）；只有 ⑥ 和 ② 碰 ROS。调试用的 `*Node` 类（`LineDetectorNode`/`BlockDetectorNode`/`GridMapperNode`）**不在主流程里**，只为单独跑一跑看输出。
+要点：③④⑤ 全是**不依赖 ROS 的纯 Python 类**，因此可离线单测（`test/` 1015 行覆盖的就是它们）；只有 ⑥ 和 ② 碰 ROS。调试用的 `*Node` 类（`LineDetectorNode`/`BlockDetectorNode`/`GridMapperNode`）**不在主流程里**，只为单独跑一跑看输出。安全保护见 [`SAFETY.md`](SAFETY.md)。
 
 ---
 
@@ -152,6 +152,10 @@ sequenceDiagram
 - **转向**：目标角 = `期望转角 / ang_scale`（**除法**，`:266`），P 控制 + 0.12rad/s 静摩擦补偿（`:279-282`），容差 0.0873rad ≈ 5°。
 - **丢线保护**：连续 5 帧无黑线 → 停车返回 False（`:217-223`），由上层计入失败。
 - **碰撞保护**：前扇区 0±15° 最近距离 < 0.25m → 停车 + 后退半格（`:202-208,327-343`）。
+- **传感器门禁（2026-10-03 新增）**：动作前与每个控制周期各查一次保鲜度——
+  激光年龄 > 0.5s 一律不动（失效时 `sector_min_range` 返回 `None`，而开口判定与
+  碰撞保护都把 `None` 当"通畅"）；前进还要求相机年龄 ≤ 2.0s（失效时循迹偏差恒 0，
+  车会闷头直行）。详见 [`SAFETY.md`](SAFETY.md) §七。
 
 ---
 
@@ -257,11 +261,16 @@ ros2 run maze_explorer maze_calib motion     # 走格距离与 90° 转角系数
 maze_run（自检进程，随后 exec 成 launch）
 └── ros2 launch maze_explorer maze_bringup.launch.py
     └── mission_manager（单进程，内含 4 个节点 + 6 个算法对象）
-        ├── BaseDriver      → /cmd_vel @20Hz
-        ├── SensorHub       → RGB-D 同步 + /scan
+        ├── BaseDriver      → /cmd_vel @20Hz + 速度看门狗线程
+        ├── SensorHub       → RGB-D 同步 + /scan（含扫描保鲜度）
         ├── ArmController   → 关节 + IK
         └── MotionController / GraspFSM / GridMapper / DfsPlanner / LineDetector / BlockDetector
 ```
+
+**BaseDriver 现在有两个发布者路径**（两者都写同一份缓存）：
+
+1. 20Hz 定时器 `_tick` —— 走 executor，正常情况下负责重发；
+2. **看门狗线程** —— 不经过 executor，只在"非零指令超时未刷新"时发一次全零。
 
 三份 yaml 由 launch **只注入 `mission_manager`**（`maze_bringup.launch.py:42-55`）：`maze_params.yaml` 几何与限幅、`hsv_params.yaml` 阈值、`arm_poses.yaml` 位姿与包络。子节点在进程内创建，收不到 yaml，靠构造参数转发（已知缺口见 §十）。
 
@@ -272,6 +281,10 @@ maze_run（自检进程，随后 exec 成 launch）
 | 项 | 值 | 位置 |
 |---|---|---|
 | `/cmd_vel` 重发 | 20Hz，必须 ≥10Hz | `base_driver.py:60` |
+| **速度看门狗阈值** | **0.5s**（非零指令超时未刷新即强制归零，0=禁用） | `maze_params.yaml:67` |
+| **激光保鲜阈值** | **0.5s**（超过即拒绝一切移动） | `maze_params.yaml:70` |
+| **相机保鲜阈值** | **2.0s**（超过即禁止前进） | `maze_params.yaml:73` |
+| **激光失效等待上限** | **3.0s**（仍失效 → FAULT） | `maze_params.yaml:75` |
 | 运动闭环 spin 周期 | 0.02s（≈50Hz） | `motion_controller.py:242,284,321` |
 | 走格上限 / 转向上限 | 12.0s / 8.0s | `maze_params.yaml:61`、`motion_controller.py:100` |
 | 横移上限 | 6.0s | `motion_controller.py:295` |
@@ -308,11 +321,13 @@ maze_run（自检进程，随后 exec 成 launch）
 
 | 项 | 命令 | 结果 |
 |---|---|---|
-| 单元测试 | `pytest test -q` | 75 passed（需可写 `ROS_LOG_DIR`） |
+| 单元测试 | `pytest test -q` | **91 passed**（原 75 + 安全 16） |
 | 构建 | `colcon build --packages-select maze_explorer` | 通过，8 个入口脚本 |
-| 无硬件烟测 | `ros2 run maze_explorer maze_run --check-only` | 正常输出 4 项 FAIL 与修复提示 |
-| `ament_flake8` / `ament_pep257` | — | **均未过检**（15 项 / 346 项），与 `AGENTS.md` §6.1 要求不符 |
+| 无硬件烟测 | `ros2 run maze_explorer maze_run --check-only` | 正常输出 4 项自检与修复提示 |
+| `ament_flake8` | — | 全仓**仍未过检**（12 项 F401 + 3 项 E501，均为本次改动之外的存量）；**本次改动的 5 个文件无违规** |
+| `ament_pep257` | — | 全仓未过检（346 项，docstring 首行用中文"。"） |
 | 实机 | — | 未验证（HSV、转角系数、外参、收集筐位姿待现场标定） |
+| 安全保护 | — | 看门狗 + 激光/相机保鲜度已实现并单测覆盖，详见 [`SAFETY.md`](SAFETY.md) §七 |
 
 ---
 
@@ -332,16 +347,16 @@ maze_run（自检进程，随后 exec 成 launch）
 | 文件 | 行 | 作用 | ① 依赖谁 | ① 被谁依赖 |
 |---|---|---|---|---|
 | `__init__.py` | 12 | 包声明 + 分层说明 | — | 无 |
-| `base_driver.py` | 217 | 底盘节点：缓存 Twist + 20Hz 发 `/cmd_vel`，订阅 `/odom_raw` | rclpy、geometry_msgs、nav_msgs | mission_manager、motion_controller、calibration_tool |
-| `sensors.py` | 203 | 传感器节点：RGB-D 时间同步 + `/scan` 扇区取距 | message_filters、cv_bridge、numpy | mission_manager、motion_controller |
+| `base_driver.py` | 378 | 底盘节点：缓存 Twist + 20Hz 发 `/cmd_vel`，订阅 `/odom_raw`；**含 `CommandWatchdog` 独立线程** | rclpy、geometry_msgs、nav_msgs | mission_manager、motion_controller、calibration_tool |
+| `sensors.py` | 217 | 传感器节点：RGB-D 时间同步 + `/scan` 扇区取距 + **两项保鲜度** | message_filters、cv_bridge、numpy | mission_manager、motion_controller |
 | `arm_controller.py` | 285 | 机械臂节点：关节下发 + IK/FK 服务调用 | arm_msgs、arm_interface | mission_manager、grasp_fsm |
 | `line_detector.py` | 239 | 黑线算法类 + 调试节点：逐行质心 + 直线拟合 → 偏差/倾角 | cv2、numpy | mission_manager、motion_controller |
 | `block_detector.py` | 329 | 四色检测 + 深度解算 + 外参变换 + 调试节点 | cv2、numpy、cv_bridge | mission_manager、grasp_fsm |
 | `grid_mapper.py` | 292 | 7×7 拓扑、坐标/朝向约定、开口回写 + 调试节点 | 无（纯算法） | dfs_planner、motion_controller、mission_manager |
 | `dfs_planner.py` | 210 | DFS 选向/回溯、目标队列（深度降序）、BFS 最短路 | grid_mapper | mission_manager |
-| `motion_controller.py` | 348 | 三原语（走格/转向/横移）+ PID + 碰撞保护 | base_driver、sensors、line_detector、grid_mapper、numpy | mission_manager |
+| `motion_controller.py` | 430 | 三原语（走格/转向/横移）+ PID + 碰撞保护 + **传感器保鲜门禁** | base_driver、sensors、line_detector、grid_mapper、numpy | mission_manager |
 | `grasp_fsm.py` | 269 | 抓取九步状态机 + 失败重试 | arm_controller、block_detector | mission_manager |
-| `mission_manager.py` | 491 | 顶层状态机 + 执行器 + 全部参数声明（总装点） | 上面 8 个模块 + rclpy | setup.py 入口、launch |
+| `mission_manager.py` | 537 | 顶层状态机 + 执行器 + 全部参数声明（总装点）+ **激光失效等待/FAULT** | 上面 8 个模块 + rclpy | setup.py 入口、launch |
 | `calibration_tool.py` | 424 | 标定三模式：HSV 框选 / 巡线姿态 / 走格与转角自测 | base_driver（仅借 `yaw_from_quaternion`）、cv2 | calib_entry |
 | `run_entry.py` | 201 | `maze_run`：四项自检 → 关手柄自启 → 转交 launch | rclpy、arm_interface、nav_msgs、sensor_msgs | setup.py 入口 |
 | `calib_entry.py` | 128 | `maze_calib`：菜单选模式 → 延迟导入 calibration_tool | calibration_tool（延迟导入） | setup.py 入口 |
@@ -355,7 +370,7 @@ maze_run（自检进程，随后 exec 成 launch）
 | `setup.cfg` | 4 | ament_python 脚本安装路径 |
 | `resource/maze_explorer` | 0 | ament 索引空标记文件，`ros2 run` 靠它找到包 |
 | `.gitignore` | 18 | 忽略 build/install/log、`__pycache__`、`*.log` |
-| `config/maze_params.yaml` | 74 | 几何、速度限幅、PID、激光阈值、对位与配额 |
+| `config/maze_params.yaml` | 88 | 几何、速度限幅、PID、激光阈值、对位与配额、**四项安全参数** |
 | `config/hsv_params.yaml` | 25 | 黑线 + 四色 HSV、最小像素/面积、形态学核 |
 | `config/arm_poses.yaml` | 50 | 四个关键位姿、夹爪角度、抓取包络、动作时长 |
 | `launch/maze_bringup.launch.py` | 71 | 注入三份 yaml 启动 `mission_manager`，暴露 `origin_rc`/`exit_rc`/`mount_calibrated` |
@@ -364,7 +379,8 @@ maze_run（自检进程，随后 exec 成 launch）
 | `test/test_grid_mapper.py` | 155 | 坐标往返、朝向表、开口回写与越界、exhausted 判定 |
 | `test/test_dfs_planner.py` | 145 | DFS 决策/回溯/finish、目标深度降序、BFS 最短路 |
 | `test/test_approach.py` | 89 | 锁定 B3：触发距离判定与自适应步长收敛 |
-| `test/test_motion_scaling.py` | 148 | 锁定 B2：转向缩放用除法；需 `rclpy.init`（唯一依赖 ROS 的测试） |
+| `test/test_motion_scaling.py` | 148 | 锁定 B2：转向缩放用除法；需 `rclpy.init` |
+| `test/test_safety.py` | 326 | 锁定三项安全语义：看门狗判定（假时钟）、激光/相机保鲜度门禁、`scan_age()` 与看门狗接线（后两项需 ROS 上下文，环境不允许时 skip） |
 
 ### 12.3 参数依赖：15 个键写了但没人读（实测）
 

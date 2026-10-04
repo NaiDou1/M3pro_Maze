@@ -142,6 +142,9 @@ simplePID.compute(target, current) / .reset()
 ## 5. 关键陷阱清单
 
 1. **`ROS_DOMAIN_ID=30`** 必须设置，且要 source **两个**工作区的 `install/setup.bash`
+   - 衍生陷阱：`/cmd_vel` **无超时停车保护**，下位机锁存最后一条指令。代码侧已由
+     `CommandWatchdog`（独立线程，`cmd_watchdog_timeout=0.5s`）覆盖"主线程/executor
+     卡死"，但**进程被 SIGKILL/OOM 时线程一并消失** → 该场景只能物理断电（见 `SAFETY.md`）
 2. **`/home/jetson/joy_control/joy.sh` 开机自启**会跑 `yahboom_joy_M3Pro` 并发 `JoyState`(Bool)；部分节点在 `JoyState=True` 时会主动发零速 → **运行自研程序前先关掉手柄自启**
 3. **`LineFollowHSV.text` 的 `V_min=74` 偏高**，不符合黑色电工胶布的低明度特征 → **必须用 `Roi_hsv` 现场重标黑线阈值**；四色方块阈值同理按自备材质重标
 4. **相机在机械臂上** → 巡线姿态下完成定位，抓取期间相机随臂移动属"盲抓"
@@ -195,7 +198,8 @@ simplePID.compute(target, current) / .reset()
 └── scripts/          run_maze.sh（含 rosbag 录制）
 ```
 
-文档：`AGENTS.md`（本文件）、`PLAN.md`（实施方案）
+文档：`AGENTS.md`（本文件）、`PLAN.md`（实施方案）、`ARCHITECTURE.md`（架构与依赖）、
+`SAFETY.md`（安全审计与上机检查清单）、`README.md`（入门）
 
 ---
 
@@ -218,7 +222,7 @@ simplePID.compute(target, current) / .reset()
 
 | 仓库 | 路径 | 管理内容 |
 |---|---|---|
-| **文档仓库** | `/home/jetson/Desktop`（`.git` 位于 Desktop 根） | `M3Pro_Maze/AGENTS.md`、`M3Pro_Maze/PLAN.md`、`.gitignore` |
+| **文档仓库** | `/home/jetson/Desktop`（`.git` 位于 Desktop 根） | `M3Pro_Maze/` 下的 `README.md`、`AGENTS.md`、`PLAN.md`、`ARCHITECTURE.md`、`SAFETY.md`，以及根 `.gitignore` |
 | **代码仓库** | `/home/jetson/yahboomcar_ws/src/maze_explorer` | 自研 ROS 2 包源码（本项目的全部代码） |
 
 ### 为什么分成两个仓库
@@ -279,17 +283,18 @@ verify(arm): joint6 开合角标定 30/135，单块节拍 7.4s
 
 ### 10.1 实现状态
 
-代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现与 V2 缺陷修复。当前：**pytest 75/75 通过**、`colcon build` 通过、无硬件启动烟测通过。
+代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复与 V3 安全保护。当前：**pytest 91/91 通过**、`colcon build` 通过、无硬件启动烟测通过。
 
 | 层 | 模块 | 状态 |
 |---|---|---|
-| 硬件抽象 | `base_driver` / `sensors` / `arm_controller` | 完成（含航向源开关 `yaw_source`） |
+| 硬件抽象 | `base_driver` / `sensors` / `arm_controller` | 完成（含航向源开关 `yaw_source`、速度看门狗 `CommandWatchdog`） |
 | 感知 | `line_detector` / `block_detector` | 完成 |
 | 建图决策 | `grid_mapper` / `dfs_planner` | 完成 |
-| 控制 | `motion_controller` / `grasp_fsm` | 完成 |
+| 控制 | `motion_controller` / `grasp_fsm` | 完成（含传感器保鲜门禁） |
 | 编排 | `mission_manager` | 完成（INIT/EXPLORE/APPROACH/GRASP/RETURN/FINISH/FAULT） |
 | 入口与工具 | `run_entry` / `calib_entry` / `calibration_tool` | 完成 |
-| 测试 | `test_perception` / `test_grid_mapper` / `test_dfs_planner` / `test_motion_scaling` / `test_approach` | 75 项 |
+| 安全 | 看门狗 + 激光/相机保鲜度 + 失效即停 | 完成（V3，见 §10.5 与 `SAFETY.md`） |
+| 测试 | `test_perception` / `test_grid_mapper` / `test_dfs_planner` / `test_motion_scaling` / `test_approach` / `test_safety` | 91 项 |
 
 说明：`PLAN.md` 中的 `DETECT` 状态已合入 `EXPLORE`（检测与探索在同一状态内），属实现简化、非缺陷；`score_logger` 尚未实现（如需记录成绩时间可后续补）。
 
@@ -328,3 +333,23 @@ ros2 run maze_explorer maze_calib hsv           # 或 line_pose / motion
 | 相机安装外参 `mount_xyz / mount_rpy` | 标定后可置 `mount_calibrated:=true`，否则抓取只用相机系近似 |
 | 车载收集筐与 `place_pose` | 收集筐固定方式与位置决定放置位姿 |
 | `detect_trigger_distance`（默认 0.60m） | 依相机实际视野与巡线姿态调整 |
+
+### 10.5 V3 安全保护（2026-10-03 实现并验证）
+
+背景：本机 `/cmd_vel` **无超时停车保护**，下位机锁存最后一条指令；而发布依赖单线程
+executor 里主线程的 spin。完整审计与残留风险见 `SAFETY.md`。
+
+| 机制 | 位置 | 语义 |
+|---|---|---|
+| `CommandWatchdog` | `base_driver.py:46` | **独立线程**，非零速度指令超过 `cmd_watchdog_timeout`（0.5s）未被刷新 → 强制归零并 WARN。不经过 executor，故主线程阻塞/executor 卡死时仍有效；触发次数见 `BaseDriver.watchdog_trips` |
+| `SensorHub.scan_age()` | `sensors.py:122` | 激光保鲜度（秒），无数据为 `inf`。**必须先查保鲜度再相信测距**：激光失效时 `sector_min_range` 返回 `None`，而开口判定与碰撞保护都把 `None` 当"通畅" |
+| `MotionController.sensors_ok()` / `_stop_if_unhealthy()` | `motion_controller.py:177,188` | 激光年龄 > `scan_timeout`（0.5s）→ 禁止一切移动；`need_vision` 时相机年龄 > `vision_timeout`（2.0s）→ 禁止前进 |
+| `advance()` 门禁 | `motion_controller.py:236` | **动作前 + 每个控制周期**各查一次；前进要求激光+相机，后退只要求激光 |
+| `turn_to_heading()` / `strafe()` 门禁 | `motion_controller.py:325,367` | 动作前查激光，失效则不启动（避免把车停在半路） |
+| `_run_explore()` 门禁 | `mission_manager.py:473` | 勘测路口前等待激光恢复 `sensor_wait_timeout`（3s）；仍失效 → FAULT。防止把"失效"写成拓扑里的假开口 |
+
+**未覆盖**（仍需人工兜底）：进程被 `SIGKILL`/OOM/SIGHUP 时看门狗线程一并消失 → 只能物理
+断电；转向/后退仍无激光守卫；无截止看门狗、无手柄接管。
+
+验收：`pytest 91/91`（新增 `test_safety.py` 16 项）、`colcon build` 通过、
+`maze_run --check-only` 正常、改动文件 `ament_flake8` 无违规。

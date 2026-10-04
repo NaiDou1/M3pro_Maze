@@ -153,11 +153,14 @@ dep_pids() { [ -f "${STATE_FILE}" ] && cat "${STATE_FILE}" || true; }
 start_dep() {   # start_dep <名称> <日志名> <命令...>
     local name="$1" log="$2"; shift 2
     local dir; dir="$(cat "${STATE_DIR_FILE}" 2>/dev/null || echo "${LOG_ROOT}")"
+    # 切到日志目录再启动：相机 SDK 会在 cwd 建 Log/ 目录，否则会污染调用者的工作目录
+    pushd "${dir}" >/dev/null || true
     # setsid：让每个依赖链独占一个进程组（PGID == 记录的 PID）。
     # 停机时对**整个进程组**发 SIGINT，等价于终端里按 Ctrl-C，
     # 否则只杀 launch 父进程会让子节点变成孤儿继续跑（实测踩过）。
     setsid nohup "$@" >"${dir}/${log}.log" 2>&1 &
     local pid=$!
+    popd >/dev/null || true
     echo "${pid}" >>"${STATE_FILE}"
     c_info "已启动 ${name}（pid=${pid}，独立进程组，日志 ${dir}/${log}.log）"
 }
@@ -178,6 +181,22 @@ ensure_agent() {
 }
 
 start_deps() {
+    # 护栏一：上一次启动的依赖链还活着时**拒绝再起**。
+    # 实测教训（2026-10-04）：脚本被连跑两次 → 两个相机容器抢同一台 USB 设备 →
+    # libobsensor 抛 "Resource busy!" → 容器 abort（exit code 6）；且第二次
+    # start_deps 会清空 .deps.pid，导致第一次的进程变成 --stop 看不见的孤儿。
+    local old; old="$(dep_pids)"
+    local alive=""
+    local pid
+    for pid in ${old}; do
+        kill -0 "${pid}" 2>/dev/null && alive="${alive} ${pid}"
+    done
+    if [ -n "${alive}" ]; then
+        c_err "上一次启动的依赖链仍在运行（pid:${alive}）"
+        c_err "重复启动会让两个相机容器抢同一个 USB 设备，实测会崩溃（Resource busy）"
+        die "请先执行：${SCRIPT_NAME} --stop"
+    fi
+
     local stamp; stamp="$(date +%Y%m%d_%H%M%S)"
     local dir="${LOG_ROOT}/${stamp}"
     mkdir -p "${dir}"
@@ -264,7 +283,9 @@ stop_deps() {
     # 实测要点：相机以 `component_container`（rclcpp_components）形式运行，
     # 进程名里没有 "orbbec"/"camera"，漏掉它就会留下一个隐形的相机发布者。
     local left
-    left="$(pgrep -af '[l]aserscan_multi_merger|[l]aser_filter_node|[e]kf_filter_node|[i]mu_filter_madgwick|[k]in_srv|[c]omponent_container|[r]obot_state_publisher' 2>/dev/null | cut -c1-80)"
+    # 排除本脚本自身与父进程，避免命令行里恰好含关键字时自匹配（实测踩过）
+    left="$(pgrep -af '[l]aserscan_multi_merger|[l]aser_filter_node|[e]kf_filter_node|[i]mu_filter_madgwick|[k]in_srv|[c]omponent_container|[r]obot_state_publisher' 2>/dev/null \
+        | awk -v me="$$" -v pp="${PPID:-0}" '$1 != me && $1 != pp' | cut -c1-80)"
     if [ -n "${left}" ]; then
         c_warn "仍有依赖节点存活（可能是本次或上次遗留）："
         printf '%s\n' "${left}" | sed 's/^/      /'
@@ -408,6 +429,14 @@ fi
 
 setup_env
 
+# 全程落盘：--run/--calib 的会话与任务输出必须留档，否则出问题只能靠回忆终端
+if [ "${MODE}" = "run" ] || [ "${MODE}" = "calib" ]; then
+    SESSION_LOG="${LOG_ROOT}/session_$(date +%Y%m%d_%H%M%S)_${MODE}.log"
+    # shellcheck disable=SC2094
+    exec > >(tee -a "${SESSION_LOG}") 2>&1
+    c_info "本次会话完整日志：${SESSION_LOG}"
+fi
+
 case "${MODE}" in
     status)
         show_status
@@ -453,6 +482,11 @@ case "${MODE}" in
         print_stop_guide
         ;;
     run)
+        # 护栏二：已经有任务在跑时拒绝再起（两个 mission_manager 会互抢 /cmd_vel）
+        if pgrep -f '[m]aze_explorer/mission_manager|[r]os2 run maze_explorer maze_run' >/dev/null 2>&1; then
+            die "检测到已有任务在运行，拒绝重复启动（先 Ctrl-C 停掉它，或用 --status 查看）"
+        fi
+
         # 运动前的最后一道闸：说清楚风险并要一次显式确认
         cat <<'EOF'
 
@@ -464,20 +498,30 @@ case "${MODE}" in
 ====================================================================
 EOF
         if [ "${ASSUME_YES}" -eq 0 ]; then
-            printf '确认无误请输入 RUN 并回车（其他任何输入都中止）：'
+            printf '确认无误请输入 RUN 并回车（大小写不限，r/y 也可；其他任何输入都中止）：'
             read -r answer
-            [ "${answer}" = "RUN" ] || die "未确认，已中止（没有下达任何运动指令）"
+            # 大小写与简写都接受：实测有人输入小写 run 被旧版拒绝，误以为“跑了但没动”
+            case "$(printf '%s' "${answer}" | tr '[:upper:]' '[:lower:]')" in
+                run|r|yes|y) c_info "已确认：${answer}" ;;
+                *) die "未确认（收到 '${answer}'，需要 RUN），已中止（没有下达任何运动指令）" ;;
+            esac
         fi
         kill_joy_chain
         c_step "启动任务（Ctrl-C 停止；本脚本会在任务退出后打印停机核对清单）"
+        [[ -n "${SESSION_LOG:-}" ]] && c_info "任务输出同时写入：${SESSION_LOG}"
+        # MISSION_CMD 覆盖点仅用于**脚本自测**（例如设为 true 可在不驱动底盘的前提下
+        # 验证确认/日志/收尾路径），日常不要改它。
+        mission_cmd="${MAZE_TEST_MISSION_CMD:-ros2 run maze_explorer maze_run}"
         # 捕获 INT 只为在子进程退出后继续跑收尾逻辑，不吞掉子进程的信号
         trap 'c_warn "收到 Ctrl-C，等待任务退出…"' INT
-        ros2 run maze_explorer maze_run
+        # shellcheck disable=SC2086
+        ${mission_cmd}
         rc=$?
         trap - INT
         c_step "任务已退出（返回码 ${rc}）"
         if [ "${rc}" -ne 0 ]; then
             c_warn '非 0 退出：若日志里没有「任务完成/任务中断」，说明是异常退出，请核对 /cmd_vel 最后一条，必要时断电'
+            c_warn "排查入口：${SESSION_LOG:-（本次无会话日志）}；ROS 节点日志在 ~/.ros/log/"
         fi
         print_stop_guide
         ;;

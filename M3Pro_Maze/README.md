@@ -108,6 +108,9 @@ M3Pro_Maze/scripts/maze_test.sh --status   # 只看当前 ROS 图，不启动任
 （`camera_arm_kin.launch.py` 本身已含相机，单独再起会撞车）、依赖链停机时对整个
 进程组发 SIGINT（只杀 launch 父进程会留下孤儿节点）。
 
+两条纪律：**不要同时跑两份脚本**（会抢相机，护栏会拒绝第二次）；
+`--run` 的完整会话日志在 `~/maze_test_logs/session_*.log`，出问题先看它。
+
 ### 手动（等价步骤）
 
 ```bash

@@ -127,7 +127,8 @@ is_front_blocked() → d is not None and d < safety → False # motion_controlle
 
 > **一键脚本**：[`scripts/maze_test.sh`](scripts/maze_test.sh) 把本节"第一次运行"的前四步自动化了：
 > 起依赖链 → 等话题/服务 → 四项自检 → 打印停机指引，**默认不动车**。
-> `--run` 才驱动底盘，且要打字确认 `RUN`。首次仍建议人工逐条核对下面每一项。
+> `--run` 才驱动底盘，且要打字确认 `RUN`（大小写不限）。首次仍建议人工逐条核对下面每一项。
+> 出错先看会话日志 `~/maze_test_logs/session_*.log`（`--run`/`--calib` 全程留档）。
 
 **第一次运行（必须）**
 

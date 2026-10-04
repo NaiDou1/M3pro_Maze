@@ -162,7 +162,12 @@ simplePID.compute(target, current) / .reset()
 11. **原地 180° 掉头余量仅 ~2.5cm/侧**（车对角 34.9cm vs 通道 40cm）→ 掉头优先安排在路口，全程激光近距守卫
 12. **Orbbec 相机在 USB2.0 下会自行掉线重连**：实测日志 `onDeviceDisconnected`（启动约 27s 后）→ 约 7s 后 `Connecting to the default device` 重连。断连窗口内 `maze_run` 自检会**误报"未收到相机图像"**，与配置无关 → 等 10s 重试；根治要换 USB3.0 口/直连不 Hub，或减少同时开启的流（当前 color+depth+ir 三路都开）
     - 依据：2026-10-04 `~/maze_test_logs/*/camera_ik.log`（`Start device cost 867ms` → 27s 后 `onDeviceDisconnected` → 6.2s 后重连）
-13. **一键脚本** `M3Pro_Maze/scripts/maze_test.sh`（文档仓，非 ROS 包）：默认只起依赖链 + 四项自检、**不动车**；`--run` 才驱动底盘且要打字确认。它用 `setsid` 给每条依赖链独立进程组，`--stop` 对整个组发 SIGINT（只杀 launch 父进程会留下孤儿节点，实测踩过）
+13. **一键脚本** `M3Pro_Maze/scripts/maze_test.sh`（文档仓，非 ROS 包）：默认只起依赖链 + 四项自检、**不动车**；`--run` 才驱动底盘且要打字确认（`run`/`r`/`yes`/`y`，大小写不限）。它用 `setsid` 给每条依赖链独立进程组，`--stop` 对整个组发 SIGINT（只杀 launch 父进程会留下孤儿节点，实测踩过）
+    - **不要同时跑两次**：脚本有护栏拒绝重复启动 —— 第二次会清空 `.deps.pid`，把第一次的进程变成 `--stop` 看不见的孤儿
+    - `--run`/`--calib` 会写完整会话日志 `~/maze_test_logs/session_*.log`；ROS 节点日志在 `~/.ros/log/`（**注意**：launch 起的 python 节点日志文件名是 `python3_<pid>_<ts>.log`，**不是**节点名，按名找会找不到）
+14. **两个相机容器不能并存**：`M3Pro_demo camera_arm_kin.launch.py` 已含相机，若同时另有 `orbbec_camera`（或脚本被连跑两次），第二个会抢同一台 USB 设备 → libobsensor 抛 `Resource busy! You can try again later!` → 容器 abort（**exit code 6**，日志里还有 `malloc_consolidate(): unaligned fastbin chunk detected`）
+    - 依据：2026-10-04 `~/maze_test_logs/20261004_215400/camera_ik.log:1554-1558`
+    - 衍生副作用：相机 SDK 会在**进程 cwd** 建 `Log/` 目录（脚本已改为切到日志目录再启动）
 
 ---
 

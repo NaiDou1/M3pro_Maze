@@ -95,6 +95,21 @@ maze_explorer/
 
 **环境**（已验证）：NVIDIA Jetson Orin，Ubuntu 22.04.5，ROS 2 Humble，`ROS_DOMAIN_ID=30`。
 
+### 一键（推荐首次）
+
+```bash
+M3Pro_Maze/scripts/maze_test.sh            # 起依赖链 + 四项自检，不动车（约 1~2 分钟）
+M3Pro_Maze/scripts/maze_test.sh --run      # 自检全绿后，打字确认 RUN 才真跑
+M3Pro_Maze/scripts/maze_test.sh --stop     # 停掉脚本起的依赖链
+M3Pro_Maze/scripts/maze_test.sh --status   # 只看当前 ROS 图，不启动任何东西
+```
+
+脚本已处理三件事：`ROS_DOMAIN_ID=30` 与两个工作区 source、**相机只起一次**
+（`camera_arm_kin.launch.py` 本身已含相机，单独再起会撞车）、依赖链停机时对整个
+进程组发 SIGINT（只杀 launch 父进程会留下孤儿节点）。
+
+### 手动（等价步骤）
+
 ```bash
 # 1. 环境（必须按序 source 两个工作区）
 export ROS_DOMAIN_ID=30
@@ -103,19 +118,21 @@ source /home/jetson/yahboomcar_ws/install/setup.bash
 source /home/jetson/M3Pro_ws/install/setup.bash
 
 # 2. 启动链（严格按序）
-sh /home/jetson/start_agent.sh                          # 下位机 micro-ROS（雷达/IMU/里程计）
-ros2 launch slam_mapping bringup.launch.py              # 雷达链 + IMU 滤波 + EKF
-ros2 launch orbbec_camera dabai_dcw2.launch.py          # 深度相机
-ros2 launch maze_explorer maze_bringup.launch.py        # 本项目系统
+sh /home/jetson/start_agent.sh                          # 下位机 micro-ROS（提供 /odom_raw、/scan0/1、/battery）
+ros2 launch slam_mapping bringup.launch.py              # 雷达链 + IMU 滤波 + EKF → /scan
+ros2 launch M3Pro_demo camera_arm_kin.launch.py         # 相机 + IK 服务（勿再单独起相机）
+ros2 run maze_explorer maze_run --check-only            # 四项自检，不动车
+ros2 run maze_explorer maze_run                         # 真跑（手放电源开关上）
 
 # 3. 构建（只构建自研包）
 colcon build --packages-select maze_explorer
 ```
 
-运行前两个坑（详见 `AGENTS.md` §5）：
+运行前三个坑（详见 `AGENTS.md` §5 与 `SAFETY.md`）：
 
-- 关掉开机自启的手柄节点 `yahboom_joy_M3Pro`，否则部分节点会主动发零速；
-- 未设 `ROS_DOMAIN_ID=30` 或漏 source 任一工作区时，看不到任何话题。
+- 关掉开机自启的手柄节点 `yahboom_joy_M3Pro`，否则 `joy_ctrl` 会与本体抢 `/cmd_vel`；
+- 未设 `ROS_DOMAIN_ID=30` 或漏 source 任一工作区时，看不到任何话题；
+- 相机在 USB2.0 下会自行掉线重连（启动约 27s 后），窗口内自检会**误报**相机 FAIL，等 10s 重试。
 
 ---
 

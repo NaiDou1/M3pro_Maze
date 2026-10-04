@@ -125,6 +125,10 @@ is_front_blocked() → d is not None and d < safety → False # motion_controlle
 
 ## 五、上机前检查清单（照做可规避绝大多数损坏）
 
+> **一键脚本**：[`scripts/maze_test.sh`](scripts/maze_test.sh) 把本节"第一次运行"的前四步自动化了：
+> 起依赖链 → 等话题/服务 → 四项自检 → 打印停机指引，**默认不动车**。
+> `--run` 才驱动底盘，且要打字确认 `RUN`。首次仍建议人工逐条核对下面每一项。
+
 **第一次运行（必须）**
 
 - [ ] 车放在**空旷地面**（≥1.5m×1.5m），**不要直接放进迷宫**
@@ -139,6 +143,7 @@ is_front_blocked() → d is not None and d < safety → False # motion_controlle
 - [ ] 只按 **Ctrl-C** 退出，**不要 `kill -9`**，不要直接关终端窗口（会发 SIGHUP）
 - [ ] 退出后确认终端打印了退出日志（`任务完成/任务中断`），否则立即断电
 - [ ] 运行中若发现雷达/相机掉线（`ros2 topic hz` 掉到 0）：软件会在 0.5s（激光）/2s（相机）内自动停车并记 WARN，但**仍建议立即断电**——自动保护不等于无人值守
+- [ ] 若相机日志出现 `onDeviceDisconnected`：说明 USB 掉线重连（实测 USB2.0 下启动约 27s 后发生一次，约 7s 恢复），**自检会误报相机 FAIL**，等 10s 重试即可；根治要换 USB3.0 口/直连不 Hub
 - [ ] `maze_calib motion` 只在空地跑：它按固定 3s/8s 开机，**无任何碰撞保护**，8s×0.5rad/s ≈ 229° 足以顶墙堵转
 - [ ] `maze_calib line_pose` 时手别离开 Ctrl-C，臂没有禁区
 

@@ -68,8 +68,13 @@ ros2 launch maze_explorer maze_bringup.launch.py            # 4. 自研系统
 | 坐标系 | `frame_id="odom"`，`child_frame_id="base_footprint"` |
 | 标定系数 | `odom_angular_scale_correction=0.75`、`odom_linear_scale_correction=1.0` |
 | 建议速度 | 迷宫内 **0.1~0.25 m/s**、**0.3~0.6 rad/s**（防麦轮打滑） |
+| 下位机节点 | **`/YB_Node`**（STM32 固件经 micro-ROS 暴露）。订阅 `/cmd_vel`、`/arm6_joints`、`/arm_joint`、`/beep`、`/rgb`；发布 `/odom_raw`、`/scan0`、`/scan1`、`/imu/data_raw`、`/battery`(`std_msgs/Float32`，实测 12.3，量纲未核验) → **底盘与机械臂都无需上位机驱动节点**，agent 在线即可；`/arm6_joints` 的订阅者就是它 |
 
 > ⚠️ `/cmd_vel` **无超时停车保护**，须 ≥10Hz 持续发布，停止时**显式发全 0 Twist**。
+>
+> **验证记录（2026-10-04）**：`ros2 node info /YB_Node` 实测上述接口；
+> `/cmd_vel` 发布者计数实测为 2（`joy_ctrl` 与自研 `base_driver` 并存时）→
+> **跑任务前必须关手柄自启**，否则两个发布者互相覆盖。
 
 ### 激光雷达
 | 项 | 值 |
@@ -155,6 +160,9 @@ simplePID.compute(target, current) / .reset()
 9. **`grasp.py` 的触发源是 `/PosInfo`（AprilTag）**，而比赛方块不许贴标记 → 该链路的"识别→抓取"部分不可直接复用，只复用其 `pixel_to_camera_depth` + `EndToCamMat` 解算与 IK 调用路径
 10. **机械臂无关节反馈**（见 §3 到位反馈行）→ 禁止写"等待到位"式阻塞，改用 `arm6_joints.time` 计时 + 抓后视觉复查
 11. **原地 180° 掉头余量仅 ~2.5cm/侧**（车对角 34.9cm vs 通道 40cm）→ 掉头优先安排在路口，全程激光近距守卫
+12. **Orbbec 相机在 USB2.0 下会自行掉线重连**：实测日志 `onDeviceDisconnected`（启动约 27s 后）→ 约 7s 后 `Connecting to the default device` 重连。断连窗口内 `maze_run` 自检会**误报"未收到相机图像"**，与配置无关 → 等 10s 重试；根治要换 USB3.0 口/直连不 Hub，或减少同时开启的流（当前 color+depth+ir 三路都开）
+    - 依据：2026-10-04 `~/maze_test_logs/*/camera_ik.log`（`Start device cost 867ms` → 27s 后 `onDeviceDisconnected` → 6.2s 后重连）
+13. **一键脚本** `M3Pro_Maze/scripts/maze_test.sh`（文档仓，非 ROS 包）：默认只起依赖链 + 四项自检、**不动车**；`--run` 才驱动底盘且要打字确认。它用 `setsid` 给每条依赖链独立进程组，`--stop` 对整个组发 SIGINT（只杀 launch 父进程会留下孤儿节点，实测踩过）
 
 ---
 

@@ -285,6 +285,9 @@ maze_run（自检进程，随后 exec 成 launch）
 | **激光保鲜阈值** | **0.5s**（超过即拒绝一切移动） | `maze_params.yaml:70` |
 | **相机保鲜阈值** | **2.0s**（超过即禁止前进） | `maze_params.yaml:73` |
 | **激光失效等待上限** | **3.0s**（仍失效 → FAULT） | `maze_params.yaml:75` |
+| **失效宽限（自旋等恢复）** | **2.0s**，仍失效才放弃动作；覆盖实测最坏 1.88s | `maze_params.yaml:80` |
+| **INIT 等相机首帧** | **15.0s**；SensorHub 首帧同步实测 1.4~1.9s | `maze_params.yaml:82` |
+| **失败重试退避** | **0.5s**；没有它时 3 次失败实测 11ms 内烧完 | `maze_params.yaml:85` |
 | 运动闭环 spin 周期 | 0.02s（≈50Hz） | `motion_controller.py:242,284,321` |
 | 走格上限 / 转向上限 | 12.0s / 8.0s | `maze_params.yaml:61`、`motion_controller.py:100` |
 | 横移上限 | 6.0s | `motion_controller.py:295` |
@@ -321,7 +324,7 @@ maze_run（自检进程，随后 exec 成 launch）
 
 | 项 | 命令 | 结果 |
 |---|---|---|
-| 单元测试 | `pytest test -q` | **91 passed**（原 75 + 安全 16） |
+| 单元测试 | `pytest test -q` | **95 passed**（原 75 + 安全 20） |
 | 构建 | `colcon build --packages-select maze_explorer` | 通过，8 个入口脚本 |
 | 无硬件烟测 | `ros2 run maze_explorer maze_run --check-only` | 正常输出 4 项自检与修复提示 |
 | `ament_flake8` | — | 全仓**仍未过检**（12 项 F401 + 3 项 E501，均为本次改动之外的存量）；**本次改动的 5 个文件无违规** |
@@ -354,9 +357,9 @@ maze_run（自检进程，随后 exec 成 launch）
 | `block_detector.py` | 329 | 四色检测 + 深度解算 + 外参变换 + 调试节点 | cv2、numpy、cv_bridge | mission_manager、grasp_fsm |
 | `grid_mapper.py` | 292 | 7×7 拓扑、坐标/朝向约定、开口回写 + 调试节点 | 无（纯算法） | dfs_planner、motion_controller、mission_manager |
 | `dfs_planner.py` | 210 | DFS 选向/回溯、目标队列（深度降序）、BFS 最短路 | grid_mapper | mission_manager |
-| `motion_controller.py` | 430 | 三原语（走格/转向/横移）+ PID + 碰撞保护 + **传感器保鲜门禁** | base_driver、sensors、line_detector、grid_mapper、numpy | mission_manager |
+| `motion_controller.py` | 462 | 三原语（走格/转向/横移）+ PID + 碰撞保护 + **传感器保鲜门禁** | base_driver、sensors、line_detector、grid_mapper、numpy | mission_manager |
 | `grasp_fsm.py` | 269 | 抓取九步状态机 + 失败重试 | arm_controller、block_detector | mission_manager |
-| `mission_manager.py` | 537 | 顶层状态机 + 执行器 + 全部参数声明（总装点）+ **激光失效等待/FAULT** | 上面 8 个模块 + rclpy | setup.py 入口、launch |
+| `mission_manager.py` | 573 | 顶层状态机 + 执行器 + 全部参数声明（总装点）+ **激光失效等待/FAULT** | 上面 8 个模块 + rclpy | setup.py 入口、launch |
 | `calibration_tool.py` | 424 | 标定三模式：HSV 框选 / 巡线姿态 / 走格与转角自测 | base_driver（仅借 `yaw_from_quaternion`）、cv2 | calib_entry |
 | `run_entry.py` | 201 | `maze_run`：四项自检 → 关手柄自启 → 转交 launch | rclpy、arm_interface、nav_msgs、sensor_msgs | setup.py 入口 |
 | `calib_entry.py` | 128 | `maze_calib`：菜单选模式 → 延迟导入 calibration_tool | calibration_tool（延迟导入） | setup.py 入口 |
@@ -370,7 +373,7 @@ maze_run（自检进程，随后 exec 成 launch）
 | `setup.cfg` | 4 | ament_python 脚本安装路径 |
 | `resource/maze_explorer` | 0 | ament 索引空标记文件，`ros2 run` 靠它找到包 |
 | `.gitignore` | 18 | 忽略 build/install/log、`__pycache__`、`*.log` |
-| `config/maze_params.yaml` | 88 | 几何、速度限幅、PID、激光阈值、对位与配额、**四项安全参数** |
+| `config/maze_params.yaml` | 98 | 几何、速度限幅、PID、激光阈值、对位与配额、**四项安全参数** |
 | `config/hsv_params.yaml` | 25 | 黑线 + 四色 HSV、最小像素/面积、形态学核 |
 | `config/arm_poses.yaml` | 50 | 四个关键位姿、夹爪角度、抓取包络、动作时长 |
 | `launch/maze_bringup.launch.py` | 71 | 注入三份 yaml 启动 `mission_manager`，暴露 `origin_rc`/`exit_rc`/`mount_calibrated` |
@@ -380,7 +383,7 @@ maze_run（自检进程，随后 exec 成 launch）
 | `test/test_dfs_planner.py` | 145 | DFS 决策/回溯/finish、目标深度降序、BFS 最短路 |
 | `test/test_approach.py` | 89 | 锁定 B3：触发距离判定与自适应步长收敛 |
 | `test/test_motion_scaling.py` | 148 | 锁定 B2：转向缩放用除法；需 `rclpy.init` |
-| `test/test_safety.py` | 326 | 锁定三项安全语义：看门狗判定（假时钟）、激光/相机保鲜度门禁、`scan_age()` 与看门狗接线（后两项需 ROS 上下文，环境不允许时 skip） |
+| `test/test_safety.py` | 399 | 锁定四项安全语义：看门狗判定（假时钟）、激光/相机保鲜度门禁、`scan_age()` 与看门狗接线（后两项需 ROS 上下文，环境不允许时 skip） |
 
 ### 12.3 参数依赖：15 个键写了但没人读（实测）
 

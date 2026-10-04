@@ -168,6 +168,10 @@ simplePID.compute(target, current) / .reset()
 14. **两个相机容器不能并存**：`M3Pro_demo camera_arm_kin.launch.py` 已含相机，若同时另有 `orbbec_camera`（或脚本被连跑两次），第二个会抢同一台 USB 设备 → libobsensor 抛 `Resource busy! You can try again later!` → 容器 abort（**exit code 6**，日志里还有 `malloc_consolidate(): unaligned fastbin chunk detected`）
     - 依据：2026-10-04 `~/maze_test_logs/20261004_215400/camera_ik.log:1554-1558`
     - 衍生副作用：相机 SDK 会在**进程 cwd** 建 `Log/` 目录（脚本已改为切到日志目录再启动）
+15. **`SensorHub` 首帧同步 RGB-D 需要 1.4~1.9s**（DDS 发现 + ApproximateTime 配对；同步器本身正常，实测 12s 配出 101 帧 ≈8.4Hz）。而机械臂指令是 `time.sleep`（不 spin），所以**任务启动初期传感器缓存必然陈旧**：
+    - `_run_init` 必须等相机首帧（`init_sensor_timeout` 15s）才能进 EXPLORE，否则安全门禁会把"尚未收到首帧"误判为"相机失效"→ 直接 FAULT（2026-10-04 实测踩到：相机年龄 `inf` → EXPLORE 首步失败）
+    - `_stop_if_unhealthy` 的宽限 `sensor_recover_wait` 默认 **2.0s**，须覆盖实测最坏 1.88s
+    - 失败重试必须有退避 `retry_pause_sec`（0.5s）：没有它时 3 次"走格失败"实测在 **11ms** 内烧完，任何瞬时异常直接判 FAULT
 
 ---
 
@@ -296,7 +300,7 @@ verify(arm): joint6 开合角标定 30/135，单块节拍 7.4s
 
 ### 10.1 实现状态
 
-代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复与 V3 安全保护。当前：**pytest 91/91 通过**、`colcon build` 通过、无硬件启动烟测通过。
+代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复与 V3 安全保护。当前：**pytest 95/95 通过**、`colcon build` 通过、无硬件启动烟测通过。
 
 | 层 | 模块 | 状态 |
 |---|---|---|
@@ -307,7 +311,7 @@ verify(arm): joint6 开合角标定 30/135，单块节拍 7.4s
 | 编排 | `mission_manager` | 完成（INIT/EXPLORE/APPROACH/GRASP/RETURN/FINISH/FAULT） |
 | 入口与工具 | `run_entry` / `calib_entry` / `calibration_tool` | 完成 |
 | 安全 | 看门狗 + 激光/相机保鲜度 + 失效即停 | 完成（V3，见 §10.5 与 `SAFETY.md`） |
-| 测试 | `test_perception` / `test_grid_mapper` / `test_dfs_planner` / `test_motion_scaling` / `test_approach` / `test_safety` | 91 项 |
+| 测试 | `test_perception` / `test_grid_mapper` / `test_dfs_planner` / `test_motion_scaling` / `test_approach` / `test_safety` | 95 项 |
 
 说明：`PLAN.md` 中的 `DETECT` 状态已合入 `EXPLORE`（检测与探索在同一状态内），属实现简化、非缺陷；`score_logger` 尚未实现（如需记录成绩时间可后续补）。
 
@@ -360,9 +364,12 @@ executor 里主线程的 spin。完整审计与残留风险见 `SAFETY.md`。
 | `advance()` 门禁 | `motion_controller.py:236` | **动作前 + 每个控制周期**各查一次；前进要求激光+相机，后退只要求激光 |
 | `turn_to_heading()` / `strafe()` 门禁 | `motion_controller.py:325,367` | 动作前查激光，失效则不启动（避免把车停在半路） |
 | `_run_explore()` 门禁 | `mission_manager.py:473` | 勘测路口前等待激光恢复 `sensor_wait_timeout`（3s）；仍失效 → FAULT。防止把"失效"写成拓扑里的假开口 |
+| `wait_until_healthy()` 宽限 | `motion_controller.py:194` | 失效后先自旋等待恢复（`sensor_recover_wait` 2.0s），仍失效才放弃动作；等待期间先停车 |
+| INIT 等相机首帧 | `mission_manager.py` `_run_init` | 进 EXPLORE 前等同步 RGB-D（`init_sensor_timeout` 15s），等不到 → FAULT |
+| 失败重试退避 | `mission_manager.py` `_retry_pause` | 走格/转向失败后 0.5s 退避再重试（`retry_pause_sec`） |
 
 **未覆盖**（仍需人工兜底）：进程被 `SIGKILL`/OOM/SIGHUP 时看门狗线程一并消失 → 只能物理
 断电；转向/后退仍无激光守卫；无截止看门狗、无手柄接管。
 
-验收：`pytest 91/91`（新增 `test_safety.py` 16 项）、`colcon build` 通过、
+验收：`pytest 95/95`（新增 `test_safety.py` 20 项）、`colcon build` 通过、
 `maze_run --check-only` 正常、改动文件 `ament_flake8` 无违规。

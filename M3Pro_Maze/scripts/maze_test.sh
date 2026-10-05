@@ -13,7 +13,7 @@
 #   ./maze_test.sh --check         # 同上（默认档），显式写法
 #   ./maze_test.sh --run           # 自检通过后，二次确认才真正开跑（会动车！）
 #   ./maze_test.sh --run --yes     # 跳过打字确认（复跑用，仍需自检全绿）
-#   ./maze_test.sh --calib hsv     # 起依赖后进标定：hsv | line_pose | motion
+#   ./maze_test.sh --calib hsv     # 起依赖后进标定：hsv | line_pose | motion | follow
 #   ./maze_test.sh --no-deps ...   # 不管理依赖链（假定已手动起好）
 #   ./maze_test.sh --stop          # 停止本脚本启动的后台依赖
 #
@@ -422,8 +422,8 @@ mkdir -p "${LOG_ROOT}"
 # 参数校验放在最前：参数不对就别白花一分钟起依赖链
 if [ "${MODE}" = "calib" ]; then
     case "${CALIB_MODE}" in
-        hsv|line_pose|motion) ;;
-        *) die "--calib 需要参数：hsv | line_pose | motion" ;;
+        hsv|line_pose|motion|follow) ;;
+        *) die "--calib 需要参数：hsv | line_pose | motion | follow" ;;
     esac
 fi
 
@@ -470,9 +470,18 @@ case "${MODE}" in
         print_stop_guide
         ;;
     calib)
-        if [ "${CALIB_MODE}" != "motion" ] && [ -z "${DISPLAY:-}" ]; then
-            die "标定 ${CALIB_MODE} 需要图形界面（cv2.imshow），请在桌面终端运行"
-        fi
+        case "${CALIB_MODE}" in
+            hsv|line_pose)
+                if [ -z "${DISPLAY:-}" ]; then
+                    c_err "标定 ${CALIB_MODE} 需要图形界面（cv2.imshow），当前无 DISPLAY（SSH 会话）"
+                    c_info "三个可选办法："
+                    c_info "  1) 在 Jetson 本机屏幕前的桌面终端里跑本脚本"
+                    c_info "  2) 用 ssh -X / -Y 登录（本机 X server 存在：/tmp/.X11-unix/X0）"
+                    c_info "  3) 不需要界面：--calib follow（纯巡线）与 --calib motion（转角）"
+                    die "已中止（未下达任何运动指令）"
+                fi
+                ;;
+        esac
         if [ "${CALIB_MODE}" = "motion" ]; then
             c_warn "motion 标定按固定 3s/8s 开环驱动且无碰撞保护 —— 确认车在≥1m 空地"
         fi

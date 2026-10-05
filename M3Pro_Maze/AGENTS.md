@@ -172,6 +172,11 @@ simplePID.compute(target, current) / .reset()
     - `_run_init` 必须等相机首帧（`init_sensor_timeout` 15s）才能进 EXPLORE，否则安全门禁会把"尚未收到首帧"误判为"相机失效"→ 直接 FAULT（2026-10-04 实测踩到：相机年龄 `inf` → EXPLORE 首步失败）
     - `_stop_if_unhealthy` 的宽限 `sensor_recover_wait` 默认 **2.0s**，须覆盖实测最坏 1.88s
     - 失败重试必须有退避 `retry_pause_sec`（0.5s）：没有它时 3 次"走格失败"实测在 **11ms** 内烧完，任何瞬时异常直接判 FAULT
+16. **巡线转向符号与增益量纲是两回事，都必须对**（2026-10-05 实测修复）：
+    - **符号**：`offset_px` 定义为"正 = 线在图像右侧"。本机图像**未旋转**——判据是黑线在画面里近粗远细（行 280 宽 12px → 行 460 宽 17px），故图像右侧 = 车体右侧，应右转（`angular.z` 为负）。旧代码给 `+Kp·offset_px`（左转）⇒ 越转越偏离黑线 ⇒ 丢线停车，现场表现就是"不跟随、一直往左偏"。由 `line_steer_sign`（默认 -1）控制，相机装反时改 +1
+    - **量纲**：误差必须用 `LineDetector.offset_norm`（无量纲，1.0 = 线在图像边缘），**不要用 `offset_px`**。像素误差配 Kp=50 + 限幅 0.6 ⇒ `|offset|>0.012px` 全部饱和 = 满舵开关，即使符号对了也只会画龙
+    - 实测对比（真实画面，线偏 18px）：旧 = `+0.600 rad/s`（半径 0.25m，几乎原地打转）→ 新 = `-0.068 rad/s`（半径 2.22m，朝线回中）
+    - 回归测试在 `test_safety.py`「五、巡线转向符号」，改这块务必先跑它
 
 ---
 
@@ -350,6 +355,7 @@ ros2 run maze_explorer maze_calib hsv           # 或 line_pose / motion
 | 相机安装外参 `mount_xyz / mount_rpy` | 标定后可置 `mount_calibrated:=true`，否则抓取只用相机系近似 |
 | 车载收集筐与 `place_pose` | 收集筐固定方式与位置决定放置位姿 |
 | `detect_trigger_distance`（默认 0.60m） | 依相机实际视野与巡线姿态调整 |
+| `line_pid` / `line_steer_sign` | 误差是**归一化**偏差（1.0 = 线在图像边缘），别填像素量纲；符号错了车会朝偏离黑线的方向一直转（判据见 §5 陷阱 16） |
 
 ### 10.5 V3 安全保护（2026-10-03 实现并验证）
 

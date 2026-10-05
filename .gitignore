@@ -13,3 +13,6 @@ __pycache__/
 *~
 *.swp
 .DS_Store
+
+# 诊断截图（相机抓帧/掩膜对照）不入库
+M3Pro_Maze/*.png

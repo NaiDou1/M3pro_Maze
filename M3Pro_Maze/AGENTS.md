@@ -305,7 +305,7 @@ verify(arm): joint6 开合角标定 30/135，单块节拍 7.4s
 
 ### 10.1 实现状态
 
-代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复与 V3 安全保护。当前：**pytest 95/95 通过**、`colcon build` 通过、无硬件启动烟测通过。
+代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复与 V3 安全保护。当前：**pytest 99/99 通过**、`colcon build` 通过、无硬件启动烟测通过。
 
 | 层 | 模块 | 状态 |
 |---|---|---|
@@ -316,7 +316,7 @@ verify(arm): joint6 开合角标定 30/135，单块节拍 7.4s
 | 编排 | `mission_manager` | 完成（INIT/EXPLORE/APPROACH/GRASP/RETURN/FINISH/FAULT） |
 | 入口与工具 | `run_entry` / `calib_entry` / `calibration_tool` | 完成 |
 | 安全 | 看门狗 + 激光/相机保鲜度 + 失效即停 | 完成（V3，见 §10.5 与 `SAFETY.md`） |
-| 测试 | `test_perception` / `test_grid_mapper` / `test_dfs_planner` / `test_motion_scaling` / `test_approach` / `test_safety` | 95 项 |
+| 测试 | `test_perception` / `test_grid_mapper` / `test_dfs_planner` / `test_motion_scaling` / `test_approach` / `test_safety` | 99 项 |
 
 说明：`PLAN.md` 中的 `DETECT` 状态已合入 `EXPLORE`（检测与探索在同一状态内），属实现简化、非缺陷；`score_logger` 尚未实现（如需记录成绩时间可后续补）。
 
@@ -377,5 +377,5 @@ executor 里主线程的 spin。完整审计与残留风险见 `SAFETY.md`。
 **未覆盖**（仍需人工兜底）：进程被 `SIGKILL`/OOM/SIGHUP 时看门狗线程一并消失 → 只能物理
 断电；转向/后退仍无激光守卫；无截止看门狗、无手柄接管。
 
-验收：`pytest 95/95`（新增 `test_safety.py` 20 项）、`colcon build` 通过、
+验收：`pytest 99/99`（新增 `test_safety.py` 24 项）、`colcon build` 通过、
 `maze_run --check-only` 正常、改动文件 `ament_flake8` 无违规。

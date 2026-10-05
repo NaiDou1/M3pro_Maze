@@ -324,7 +324,7 @@ maze_run（自检进程，随后 exec 成 launch）
 
 | 项 | 命令 | 结果 |
 |---|---|---|
-| 单元测试 | `pytest test -q` | **95 passed**（原 75 + 安全 20） |
+| 单元测试 | `pytest test -q` | **99 passed**（原 75 + 安全 24） |
 | 构建 | `colcon build --packages-select maze_explorer` | 通过，8 个入口脚本 |
 | 无硬件烟测 | `ros2 run maze_explorer maze_run --check-only` | 正常输出 4 项自检与修复提示 |
 | `ament_flake8` | — | 全仓**仍未过检**（12 项 F401 + 3 项 E501，均为本次改动之外的存量）；**本次改动的 5 个文件无违规** |
@@ -383,7 +383,7 @@ maze_run（自检进程，随后 exec 成 launch）
 | `test/test_dfs_planner.py` | 145 | DFS 决策/回溯/finish、目标深度降序、BFS 最短路 |
 | `test/test_approach.py` | 89 | 锁定 B3：触发距离判定与自适应步长收敛 |
 | `test/test_motion_scaling.py` | 148 | 锁定 B2：转向缩放用除法；需 `rclpy.init` |
-| `test/test_safety.py` | 399 | 锁定四项安全语义：看门狗判定（假时钟）、激光/相机保鲜度门禁、`scan_age()` 与看门狗接线（后两项需 ROS 上下文，环境不允许时 skip） |
+| `test/test_safety.py` | 500 | 锁定四项安全语义：看门狗判定（假时钟）、激光/相机保鲜度门禁、`scan_age()` 与看门狗接线（后两项需 ROS 上下文，环境不允许时 skip） |
 
 ### 12.3 参数依赖：15 个键写了但没人读（实测）
 

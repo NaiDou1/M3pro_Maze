@@ -302,6 +302,34 @@ verify(arm): joint6 开合角标定 30/135，单块节拍 7.4s
 - 正文（可选）写"改了什么 + 依据/验收数据"；两仓各自独立提交，互不影响
 - 两仓均**只做本地提交**，不配置 remote、不 push（除非明确要求）
 
+### 快照与恢复
+
+阶段性收尾时打**带注释的 tag**，并把完整历史导出为 bundle（单文件、含全部提交）；
+再用 tar 包存一份"不依赖 git"的源码副本。三层都放在 `~/maze_backups/`（两个仓库之外，
+避免快照套快照）。
+
+| 快照 | 代码仓 tag | 文档仓 tag | 说明 |
+|---|---|---|---|
+| `snapshot-2026-10-05` | 同名 | 同名 | 巡线转向符号修复 + 归一化 PID + `--calib follow` 模式；pytest 99 |
+
+```bash
+# 1) 看差异（先看再动）
+git diff snapshot-2026-10-05 --stat
+
+# 2) 恢复单个文件 / 整个工作区到快照（在各自仓库内执行）
+git checkout snapshot-2026-10-05 -- path/to/file
+git checkout snapshot-2026-10-05 -- .
+
+# 3) 连 .git 都没了：从 bundle 重建
+git clone ~/maze_backups/maze_explorer-snapshot-2026-10-05.bundle maze_explorer
+git -C maze_explorer checkout snapshot-2026-10-05
+
+# 4) 校验 bundle 完整性
+git bundle verify ~/maze_backups/maze_explorer-snapshot-2026-10-05.bundle
+```
+
+⚠️ `git reset --hard` / `git checkout -- .` 会丢弃未提交改动；打快照前先确认 `git status` 干净。
+
 ---
 
 ## 10. 实现状态与两个入口（V2）

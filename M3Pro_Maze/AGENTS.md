@@ -217,7 +217,7 @@ simplePID.compute(target, current) / .reset()
 | 模块级常量 | `UPPER_SNAKE` | `LASER_SECTOR_HALF_WIDTH_DEG` | — |
 | 私有成员 | `_` 前缀 | `_sensor_age` | — |
 | 布尔 | `is_` `has_` `need_` `can_` `should_` 开头 | `is_front_blocked` | `front_block` |
-| 缩写 | 仅限白名单，白名单外一律写全称 | `odom` `yaw` `pid` `hsv` `rgbd` `cmd` `rc` `ik` `fk` `dt` | `dist` 必须写 `distance` |
+| 缩写与位姿分量 | 仅限白名单，白名单外一律写全称 | `odom` `yaw` `pid` `hsv` `rgbd` `cmd` `rc` `ik` `fk` `dt`，几何位姿分量 `x` `y` `z` `roll` `pitch` | `dist` 必须写 `distance` |
 
 **单位后缀**：数值变量以单位结尾，单位取自下表，跨文件一致。
 
@@ -230,7 +230,7 @@ simplePID.compute(target, current) / .reset()
 
 **语义后缀**：阈值 `_tolerance`、允许上限 `_limit` 或 `_max`、超时 `_timeout`、起始时刻 `_start_time`、结束时刻 `_end_time`、持续时长 `_duration`。
 
-**禁止单字母名**：循环计数 `i` `j` `k` 与数学推导中间量除外，且须在同一行注释写明用途。
+**禁止单字母名**：循环计数 `i` `j` `k`、数学推导中间量与缩写白名单中的位姿分量 `x` `y` `z` 除外，且须在同一行注释写明用途；`roll` `pitch` 不受本条限制。
 
 **本轮重命名对照**：全仓统一执行，文档中的符号引用同步更新，Jetson 路径不改。
 
@@ -281,7 +281,7 @@ simplePID.compute(target, current) / .reset()
 
 **每个参数与关键属性必须给出**：单位、取值区间、默认值及其依据、越界行为。
 
-**强制手段**：`test/test_docstring_style.py` 用 `ast` 与 `tokenize` 扫描全仓，命中中英文括号、`YYYY-MM-DD` 日期、emoji 码点即测试失败。
+**强制手段**：`test/test_docstring_style.py` 用 `ast` 与 `tokenize` 扫描 `maze_explorer`、`test`、`launch` 三个目录的 docstring 与行注释，并按行扫描 `config` 下 yaml 与 `scripts` 下 shell 的注释，命中中英文括号、`YYYY-MM-DD` 日期、emoji 码点即测试失败。
 
 ### 6.5 取值域表达
 
@@ -305,6 +305,8 @@ simplePID.compute(target, current) / .reset()
 
 - `pydocstyle` 采用 `convention = pep257` 并 `add-ignore = D400,D415`：pydocstyle 只认 ASCII 句点，中文句号会被判首行缺终止符
 - `ament_pep257` 是否读取 `setup.cfg` 的该配置**待验证**，未验证前以 `setup.cfg` 的直接运行结果为准
+- `pydocstyle` 覆盖 `maze_explorer` 与 `test` 两目录：测试函数与测试替身方法已补一句话 docstring，D102 与 D103 无存量违规
+- 风格检查器的扫描范围为 `maze_explorer`、`test`、`launch` 的 Python 文件与 `config`、`scripts` 的注释行，井号前非空白时视为取值而非注释，避免把取值里的井号误判为注释
 
 ---
 
@@ -317,11 +319,14 @@ simplePID.compute(target, current) / .reset()
 │                     hsv_params.yaml（黑线+四色阈值）
 │                     arm_poses.yaml（巡线/抓取/放置位姿、包络）
 ├── launch/           maze_bringup.launch.py
-├── maze_explorer/    base_driver / sensors / line_detector / block_detector
-│                     grid_mapper / dfs_planner / motion_controller
-│                     arm_controller / grasp_fsm / mission_manager
-│                     score_logger / calibration_tool
-└── scripts/          run_maze.sh（含 rosbag 录制）
+├── maze_explorer/    _compat / base_driver / sensors / line_detector
+│                     block_detector / grid_mapper / dfs_planner
+│                     motion_controller / arm_controller / grasp_fsm
+│                     mission_manager / run_entry / calib_entry
+│                     calibration_tool
+├── test/             六个功能测试与 test_docstring_style 风格检查
+├── docs/             Sphinx autodoc 骨架
+└── scripts/          run_maze.sh（一键启动）
 ```
 
 文档：`AGENTS.md`（本文件）、`PLAN.md`（实施方案）、`ARCHITECTURE.md`（架构与依赖）、
@@ -437,7 +442,7 @@ git bundle verify ~/maze_backups/maze_explorer-snapshot-2026-10-05.bundle
 
 ### 10.1 实现状态
 
-代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复与 V3 安全保护。当前：**pytest 99/99 通过**、`colcon build` 通过、无硬件启动烟测通过。
+代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复、V3 安全保护与 rebuild 注释规范化。V3 验收：**pytest 99/99 通过**、`colcon build` 通过、无硬件启动烟测通过。rebuild 验收（2026-10-08）：`python3 test/test_docstring_style.py` 全仓清零，五个纯算法测试文件离线复跑 89 项通过；`test_perception` 的 10 项依赖真实 cv2，pytest 全量待 Jetson 复跑。
 
 | 层 | 模块 | 状态 |
 |---|---|---|
@@ -461,7 +466,7 @@ ros2 run maze_explorer maze_run --check-only    # 只自检不运动，首次务
 
 # 入口 B：现场标定（无参数进菜单，也可直达）
 ros2 run maze_explorer maze_calib
-ros2 run maze_explorer maze_calib hsv           # 或 line_pose / motion
+ros2 run maze_explorer maze_calib hsv           # 或 line_pose / motion / follow
 ```
 
 其余 6 个入口（`mission_manager`、`calibration_tool`、`line_detector`、`block_detector`、`grid_mapper`、`arm_controller`）保留作调试用途。
@@ -496,13 +501,13 @@ executor 里主线程的 spin。完整审计与残留风险见 `SAFETY.md`。
 
 | 机制 | 位置 | 语义 |
 |---|---|---|
-| `CommandWatchdog` | `base_driver.py:46` | **独立线程**，非零速度指令超过 `cmd_watchdog_timeout`（0.5s）未被刷新 → 强制归零并 WARN。不经过 executor，故主线程阻塞/executor 卡死时仍有效；触发次数见 `BaseDriver.watchdog_trips` |
-| `SensorHub.scan_age()` | `sensors.py:122` | 激光保鲜度（秒），无数据为 `inf`。**必须先查保鲜度再相信测距**：激光失效时 `sector_min_range` 返回 `None`，而开口判定与碰撞保护都把 `None` 当"通畅" |
-| `MotionController.sensors_ok()` / `_stop_if_unhealthy()` | `motion_controller.py:177,188` | 激光年龄 > `scan_timeout`（0.5s）→ 禁止一切移动；`need_vision` 时相机年龄 > `vision_timeout`（2.0s）→ 禁止前进 |
-| `advance()` 门禁 | `motion_controller.py:236` | **动作前 + 每个控制周期**各查一次；前进要求激光+相机，后退只要求激光 |
-| `turn_to_heading()` / `strafe()` 门禁 | `motion_controller.py:325,367` | 动作前查激光，失效则不启动（避免把车停在半路） |
-| `_run_explore()` 门禁 | `mission_manager.py:473` | 勘测路口前等待激光恢复 `sensor_wait_timeout`（3s）；仍失效 → FAULT。防止把"失效"写成拓扑里的假开口 |
-| `wait_until_healthy()` 宽限 | `motion_controller.py:194` | 失效后先自旋等待恢复（`sensor_recover_wait` 2.0s），仍失效才放弃动作；等待期间先停车 |
+| `CommandWatchdog` | `base_driver.py:85` | **独立线程**，非零速度指令超过 `cmd_watchdog_timeout`（0.5s）未被刷新 → 强制归零并 WARN。不经过 executor，故主线程阻塞/executor 卡死时仍有效；触发次数见 `BaseDriver.watchdog_trips` |
+| `SensorHub.scan_age()` | `sensors.py:162` | 激光保鲜度（秒），无数据为 `inf`。**必须先查保鲜度再相信测距**：激光失效时 `sector_min_range` 返回 `None`，而开口判定与碰撞保护都把 `None` 当"通畅" |
+| `MotionController.sensors_ok()` / `_stop_if_unhealthy()` | `motion_controller.py:294,330` | 激光年龄 > `scan_timeout`（0.5s）→ 禁止一切移动；`need_vision` 时相机年龄 > `vision_timeout`（2.0s）→ 禁止前进 |
+| `advance()` 门禁 | `motion_controller.py:422,453` | **动作前 + 每个控制周期**各查一次；前进要求激光+相机，后退只要求激光 |
+| `turn_to_heading()` / `strafe()` 门禁 | `motion_controller.py:530,588` | 动作前查激光，失效则不启动（避免把车停在半路） |
+| `_run_explore()` 门禁 | `mission_manager.py:431,627` | 勘测路口前等待激光恢复 `sensor_wait_timeout`（3s）；仍失效 → FAULT。防止把"失效"写成拓扑里的假开口 |
+| `wait_until_healthy()` 宽限 | `motion_controller.py:306` | 失效后先自旋等待恢复（`sensor_recover_wait` 2.0s），仍失效才放弃动作；等待期间先停车 |
 | INIT 等相机首帧 | `mission_manager.py` `_run_init` | 进 EXPLORE 前等同步 RGB-D（`init_sensor_timeout` 15s），等不到 → FAULT |
 | 失败重试退避 | `mission_manager.py` `_retry_pause` | 走格/转向失败后 0.5s 退避再重试（`retry_pause_sec`） |
 

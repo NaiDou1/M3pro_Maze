@@ -305,7 +305,7 @@ simplePID.compute(target, current) / .reset()
 
 - `pydocstyle` 采用 `convention = pep257` 并 `add-ignore = D400,D415`：pydocstyle 只认 ASCII 句点，中文句号会被判首行缺终止符
 - `ament_pep257` 是否读取 `setup.cfg` 的该配置**待验证**，未验证前以 `setup.cfg` 的直接运行结果为准
-- `pydocstyle` 覆盖 `maze_explorer` 与 `test` 两目录：测试函数与测试替身方法已补一句话 docstring，D102 与 D103 无存量违规
+- `pydocstyle` 覆盖 `maze_explorer` 与 `test` 两目录：pydocstyle 6.3.0 按本配置实跑零违规（2026-10-08），测试函数、测试替身与调试节点的 docstring 缺失项及首词大写问题已补齐
 - 风格检查器的扫描范围为 `maze_explorer`、`test`、`launch` 的 Python 文件与 `config`、`scripts` 的注释行，井号前非空白时视为取值而非注释，避免把取值里的井号误判为注释
 
 ---

@@ -31,29 +31,29 @@ STM32 只认最后一条 /cmd_vel，且无超时保护（AGENTS.md §3）
 
 | 保护机制 | 有无 | 位置 / 实测依据 |
 |---|---|---|
-| 前向碰撞保护（0°±15°，0.25m） | ✅ 有 | `motion_controller.py:151-154,202-208` |
-| 碰撞后自动后退半格 | ✅ 有 | `motion_controller.py:327-343` |
-| 位移交叉验证（里程计 vs 前墙，取小值防冲过头） | ✅ 有 | `motion_controller.py:230-238` |
-| 走格 / 转向 / 回退 超时 | ✅ 有（12s / 8s / 3s） | `maze_params.yaml:61`、`motion_controller.py:100,334` |
-| 丢线保护（连续 5 帧停车报错） | ✅ 有 | `motion_controller.py:217-223` |
-| 启动门禁（15s 内无 odom/scan 则 FAULT） | ✅ 有 | `mission_manager.py:273-282` |
-| 启动前四项自检 | ✅ 有（仅 `maze_run` 入口） | `run_entry.py:83-125` |
+| 前向碰撞保护（0°±15°，0.25m） | ✅ 有 | `motion_controller.py:359-375,456-462` |
+| 碰撞后自动后退半格 | ✅ 有 | `motion_controller.py:626-654` |
+| 位移交叉验证（里程计 vs 前墙，取小值防冲过头） | ✅ 有 | `motion_controller.py:495-503` |
+| 走格 / 转向 / 回退 超时 | ✅ 有（12s / 8s / 3s） | `maze_params.yaml:68`、`motion_controller.py:166,77` |
+| 丢线保护（连续 5 帧停车报错） | ✅ 有 | `motion_controller.py:479-485` |
+| 启动门禁（15s 内无 odom/scan 则 FAULT） | ✅ 有 | `mission_manager.py:400-406` |
+| 启动前四项自检 | ✅ 有（仅 `maze_run` 入口） | `run_entry.py:99-146` |
 | Ctrl-C / 异常时归零 | ⚠️ 尽力而为 | `mission_manager.py` main 的 finally |
 | 速度上限本身很低（巡线 0.15m/s，转向 0.5rad/s） | ✅ 有（最有效的被动保险） | `maze_params.yaml:17-21` |
-| **独立看门狗线程 / 心跳** | ✅ **已实现**（2026-10-03） | `base_driver.py:46`（`CommandWatchdog`） |
-| **激光失联 / 数据陈旧保护** | ✅ **已实现** | `sensors.py:122`、`motion_controller.py:169-207` |
-| **相机失联保护** | ✅ **已实现** | `sensors.py:107-112`、`motion_controller.py:177` |
-| **里程计失联保护** | ❌ 只告警，不停车 | `base_driver.py:191-197`（改由看门狗间接覆盖：卡住不再喂狗即归零） |
-| **转向过程碰撞保护** | ❌ 无（全程只看 yaw，仅增加"激光失效则不启动转向"门禁） | `motion_controller.py:325-340` |
-| **后退 / 回退时后方检测** | ❌ 无（盲退 0.2m） | `motion_controller.py:190,202,327-343` |
+| **独立看门狗线程 / 心跳** | ✅ **已实现**（2026-10-03） | `base_driver.py:85`（`CommandWatchdog`） |
+| **激光失联 / 数据陈旧保护** | ✅ **已实现** | `sensors.py:162-174`、`motion_controller.py:286-357` |
+| **相机失联保护** | ✅ **已实现** | `sensors.py:142-150`、`motion_controller.py:290-304` |
+| **里程计失联保护** | ❌ 只告警，不停车 | `base_driver.py:436-444`（改由看门狗间接覆盖：卡住不再喂狗即归零） |
+| **转向过程碰撞保护** | ❌ 无（全程只看 yaw，仅增加"激光失效则不启动转向"门禁） | `motion_controller.py:523-531` |
+| **后退 / 回退时后方检测** | ❌ 无（盲退 0.2m） | `motion_controller.py:434-438,626-654` |
 | **底盘侧 /cmd_vel 超时** | ❌ 无（厂商固件，AGENTS §3 已确认） | 工作区内无固件源码 |
 | **截止时间看门狗**（PLAN 决策 7） | ❌ 未实现（`deadline_margin` 命中 0） | 全仓 grep |
 | **急停话题 / 服务 / 按钮** | ❌ 无（`e_stop`、`twist_mux` 命中 0） | 全工作区 grep |
-| **手柄接管** | ❌ 主动 `pkill` 掉 | `run_entry.py:147-159` |
+| **手柄接管** | ❌ 主动 `pkill` 掉 | `run_entry.py:168-181` |
 | **声光告警** | ❌ 未使用（厂商有 `/beep`，本项目不发） | grep `/beep` 命中 0 |
 | **电压 / 电量监测** | ❌ 无（工作区内无 BatteryState） | 全工作区 grep |
 | **机械臂力矩 / 电流 / 碰撞保护** | ❌ 无（硬件也无反馈） | `arm_controller.py:23-25` |
-| **臂关节角度禁区** | ❌ 无（仅 0~180 与 joint4≤90 裁剪） | `grasp_fsm.py:248-258` |
+| **臂关节角度禁区** | ❌ 无（仅 0~180 与 joint4≤90 裁剪） | `grasp_fsm.py:341-355` |
 | **全局运行时长上限** | ❌ 无 | — |
 
 ---
@@ -66,8 +66,8 @@ STM32 只认最后一条 /cmd_vel，且无超时保护（AGENTS.md §3）
 
 ### 场景 1：进程被强杀 → 速度锁存 → 车一直跑 ★最危险
 
-- **机理**：`BaseDriver.set_velocity()` 只写缓存（`base_driver.py:120-127`），上线靠 20Hz 定时器
-  （`:97`），而定时器要主线程 `spin` 才会触发。STM32 无超时保护，会一直按最后一条指令走。
+- **机理**：`BaseDriver.set_velocity()` 只写缓存（`base_driver.py:303-323`），上线靠 20Hz 定时器
+  （`:432`），而定时器要主线程 `spin` 才会触发。STM32 无超时保护，会一直按最后一条指令走。
 - **触发**：`kill -9`、OOM killer、**关闭终端窗口（SIGHUP）**、launch 强制清理。
   这些情况下 `finally` 不执行 → 归零指令永不发出。
 - **后果**：车以最后的速度（前进 0.15m/s，或带转向分量）持续运动。
@@ -77,7 +77,7 @@ STM32 只认最后一条 /cmd_vel，且无超时保护（AGENTS.md §3）
 
 ### 场景 2：主线程阻塞 → 定时器停发 → 同样锁存
 
-- `wait_until_ready()` 用 `time.sleep()` 阻塞且**不 spin**（`arm_controller.py:156,158`），
+- `wait_until_ready()` 用 `time.sleep()` 阻塞且**不 spin**（`arm_controller.py:229,231`），
   抓取期间连续 2s 不 spin 属正常行为。此时若最后一条指令非零，车会继续走。
 - 目前靠"进抓取前必先 `stop()`"这一**约定**保证，属约定而非机制。
 - 更极端：若主线程因 IK 服务异常而长期卡住，20Hz 心跳一并消失。
@@ -85,18 +85,18 @@ STM32 只认最后一条 /cmd_vel，且无超时保护（AGENTS.md §3）
 ### 场景 3：激光失效 = 碰撞保护与开口判定同时归零，且无法察觉
 
 ```python
-sensors.sector_min_range() → 无有效点返回 None          # sensors.py:145-147
-is_path_clear()  → d is None or d > threshold → True     # sensors.py:155  None 当"通畅"
-is_front_blocked() → d is not None and d < safety → False # motion_controller.py:154  None 当"不阻塞"
+sensors.sector_min_range() → 无有效点返回 None          # sensors.py:186-206
+is_path_clear()  → d is None or d > threshold → True     # sensors.py:221-222  None 当"通畅"
+is_front_blocked() → d is not None and d < safety → False # motion_controller.py:374-375  None 当"不阻塞"
 ```
 
 - 雷达挂了、被遮挡（透明/吸光表面）、**或数据陈旧**（无任何 `scan_age()` 检查，只有 `get_scan()` 返回最后一条），
   三处判断都会退化成"前方一路通畅"。车会继续以 0.15m/s 前进，并把墙当作开口。
-- 里程计失联至少还有一条告警（`base_driver.py:191`），激光连告警都没有。
+- 里程计失联至少还有一条告警（`base_driver.py:437-444`），激光连告警都没有。
 
 ### 场景 4：相机失效 → 静默直行，不循迹
 
-- `_latest_image()` 返回 `None` → `steering` 保持 0（`motion_controller.py:212-216`）→ 不做任何循迹，
+- `_latest_image()` 返回 `None` → `steering` 保持 0（`motion_controller.py:262-265`）→ 不做任何循迹，
   仅靠里程计走完 0.37m；同时不检测方块、不触发丢线保护（`detect()` 根本没被调用）。
 - `sensors.rgbd_age()` 已经写好，但**全仓零调用**——保鲜度检查形同虚设。
 
@@ -165,7 +165,7 @@ is_front_blocked() → d is not None and d < safety → False # motion_controlle
 | 2 | **激光保鲜度 + 失效即停**：`scan_age()`，超阈值即拒绝一切移动 | `sensors.py` + `motion_controller.py` | 场景 3 | 小 | ✅ 已完成 |
 | 3 | **相机保鲜度接入**：`rgbd_age()` 超阈值即禁止前进 | `motion_controller.py` | 场景 4 | 小 | ✅ 已完成 |
 | 4 | **转向/后退加激光守卫**（PLAN §四 本来就有） | `motion_controller.py` | 场景 5 | 中 | ⬜ 待做 |
-| 5 | **对位阈值与碰撞阈值解耦**：对位时把 `safety_range` 降到 0.12m，或用视觉而非激光判停 | `motion_controller.py:202` | 场景 5 第 3 行 | 小 | ⬜ 待做 |
+| 5 | **对位阈值与碰撞阈值解耦**：对位时把 `safety_range` 降到 0.12m，或用视觉而非激光判停 | `motion_controller.py:375` | 场景 5 第 3 行 | 小 | ⬜ 待做 |
 | 6 | **截止看门狗**（PLAN 决策 7，未实现） | `mission_manager.py` | 超时兜底 | 中 | ⬜ 待做 |
 | 7 | **手柄接管**：订阅 `/JoyState`，手柄一动立即停车让权（厂商 demo 已有此约定） | `mission_manager.py` | 人肉急停 | 小 | ⬜ 待做 |
 | 8 | **物理急停按钮**串在电池输出上 | 硬件 | 场景 1 的最终手段 | 需改硬件 | ⬜ 待做 |
@@ -178,7 +178,7 @@ is_front_blocked() → d is not None and d < safety → False # motion_controlle
 代码提交：`cbfc56a feat(safety): 速度看门狗与激光/相机失效保护`、
 `69801fb test(safety): 看门狗判定与保鲜度门禁单测`。
 
-### 7.1 速度看门狗（`base_driver.py:46` `CommandWatchdog`）
+### 7.1 速度看门狗（`base_driver.py:85` `CommandWatchdog`）
 
 ```
 set_velocity(非零)  ──feed──►  看门狗记录时刻

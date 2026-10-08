@@ -360,7 +360,7 @@ maze_run（自检进程，随后 exec 成 launch）
 | `dfs_planner.py` | 322 | DFS 选向/回溯、目标队列（深度降序）、BFS 最短路 | grid_mapper | mission_manager |
 | `motion_controller.py` | 659 | 三原语（走格/转向/横移）+ PID + 碰撞保护 + **传感器保鲜门禁** | base_driver、sensors、line_detector、grid_mapper、numpy | mission_manager |
 | `grasp_fsm.py` | 378 | 抓取九步状态机 + 失败重试 | arm_controller、block_detector | mission_manager |
-| `mission_manager.py` | 710 | 顶层状态机 + 执行器 + 全部参数声明（总装点）+ **激光失效等待/FAULT** | 上面 8 个模块 + rclpy | setup.py 入口、launch |
+| `mission_manager.py` | 710 | 顶层状态机 + 执行器 + 全部参数声明（总装点）+ **激光失效等待/FAULT** | 上面 9 个模块 + rclpy | setup.py 入口、launch |
 | `calibration_tool.py` | 812 | 标定四模式：HSV 框选 / 巡线姿态 / 走格与转角自测 / 纯巡线跟线 | base_driver（仅借 `yaw_from_quaternion`）、cv2 | calib_entry |
 | `run_entry.py` | 222 | `maze_run`：四项自检 → 关手柄自启 → 转交 launch | rclpy、arm_interface、nav_msgs、sensor_msgs | setup.py 入口 |
 | `calib_entry.py` | 176 | `maze_calib`：菜单选模式 → 延迟导入 calibration_tool | calibration_tool（延迟导入） | setup.py 入口 |
@@ -369,11 +369,11 @@ maze_run（自检进程，随后 exec 成 launch）
 
 | 文件 | 行 | 作用 |
 |---|---|---|
-| `package.xml` | 38 | 依赖声明：rclpy、cv_bridge、arm_msgs、arm_interface…（**缺 message_filters**） |
+| `package.xml` | 38 | 依赖声明 10 项：rclpy、std_msgs、geometry_msgs、nav_msgs、sensor_msgs、tf2_ros、cv_bridge、message_filters、arm_msgs、arm_interface |
 | `setup.py` | 44 | 注册 **8 个** console_script：`maze_run`/`maze_calib` + 6 个调试入口；安装 config 与 launch |
 | `setup.cfg` | 12 | ament_python 脚本安装路径 + pydocstyle 配置 |
 | `resource/maze_explorer` | 0 | ament 索引空标记文件，`ros2 run` 靠它找到包 |
-| `.gitignore` | 21 | 忽略 build/install/log、`__pycache__`、`*.log` |
+| `.gitignore` | 21 | 忽略 build/install/log、`__pycache__`、`*.log`、Sphinx 输出 `docs/_build` |
 | `config/maze_params.yaml` | 105 | 几何、速度限幅、PID、激光阈值、对位与配额、**四项安全参数** |
 | `config/hsv_params.yaml` | 25 | 黑线 + 四色 HSV、最小像素/面积、形态学核 |
 | `config/arm_poses.yaml` | 50 | 四个关键位姿、夹爪角度、抓取包络、动作时长 |

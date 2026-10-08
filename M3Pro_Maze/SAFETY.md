@@ -36,7 +36,7 @@ STM32 只认最后一条 /cmd_vel，且无超时保护（AGENTS.md §3）
 | 位移交叉验证（里程计 vs 前墙，取小值防冲过头） | ✅ 有 | `motion_controller.py:495-503` |
 | 走格 / 转向 / 回退 超时 | ✅ 有（12s / 8s / 3s） | `maze_params.yaml:68`、`motion_controller.py:166,77` |
 | 丢线保护（连续 5 帧停车报错） | ✅ 有 | `motion_controller.py:479-485` |
-| 启动门禁（15s 内无 odom/scan 则 FAULT） | ✅ 有 | `mission_manager.py:400-406` |
+| 启动门禁（15s 内无 odom/scan 则 FAULT） | ✅ 有 | `mission_manager.py:400-407` |
 | 启动前四项自检 | ✅ 有（仅 `maze_run` 入口） | `run_entry.py:99-146` |
 | Ctrl-C / 异常时归零 | ⚠️ 尽力而为 | `mission_manager.py` main 的 finally |
 | 速度上限本身很低（巡线 0.15m/s，转向 0.5rad/s） | ✅ 有（最有效的被动保险） | `maze_params.yaml:17-21` |

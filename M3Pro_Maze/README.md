@@ -62,10 +62,10 @@
 
 | 仓库 | 路径 | 内容 |
 |---|---|---|
-| 文档仓库 | `/home/jetson/Desktop` | 本目录的 `README.md` / `AGENTS.md` / `PLAN.md` |
-| 代码仓库 | `/home/jetson/yahboomcar_ws/src/maze_explorer` | 自研 ROS 2 包源码（阶段 1 时初始化） |
+| 文档仓库 | `/home/jetson/Desktop` | 本目录的 `README.md` / `AGENTS.md` / `PLAN.md` / `ARCHITECTURE.md` / `SAFETY.md` |
+| 代码仓库 | `/home/jetson/yahboomcar_ws/src/maze_explorer` | 自研 ROS 2 包源码，已完成 V1 至 V3 实现 |
 
-代码目录规划：
+代码目录结构：
 
 ```
 maze_explorer/
@@ -74,7 +74,8 @@ maze_explorer/
 │                    hsv_params.yaml    黑线 + 四色阈值（现场标定）
 │                    arm_poses.yaml     巡线/抓取/放置位姿、外参
 ├── launch/          maze_bringup.launch.py   一键启动
-├── maze_explorer/   base_driver   底盘：20Hz 发布 cmd_vel、订阅 odom_raw
+├── maze_explorer/   _compat       跨版本 StrEnum 基类
+│                    base_driver   底盘：20Hz 发布 cmd_vel、订阅 odom_raw
 │                    sensors       RGB-D 时间同步、激光扇区取距
 │                    line_detector 黑线偏差 + 方块压线遮挡
 │                    block_detector 四色方块三维定位（滑行预检 + 停车精定位）
@@ -84,9 +85,11 @@ maze_explorer/
 │                    arm_controller    关节下发与 IK 调用
 │                    grasp_fsm     抓取状态机（重试 1 次）
 │                    mission_manager   顶层编排 + 降级返航
-│                    score_logger  用时与罚时打点报表
+│                    run_entry     maze_run 入口：四项自检 + 关手柄自启
+│                    calib_entry   maze_calib 标定菜单入口
 │                    calibration_tool  HSV/外参/转角标定工具
-└── scripts/         run_maze.sh   环境准备 + 启动 + rosbag 录制
+├── test/            风格检查与算法回归测试
+└── scripts/         run_maze.sh   环境准备 + 关手柄自启 + 转交 launch
 ```
 
 ---
@@ -162,4 +165,4 @@ colcon build --packages-select maze_explorer
 ## 当前状态
 
 - **文档阶段**（2026-09-27）：`AGENTS.md` / `PLAN.md` 已定稿，硬件接口事实已核对。
-- **代码未开工**：`/home/jetson/yahboomcar_ws/src/maze_explorer` 尚未创建，下一步执行 `PLAN.md` §八 阶段 1。
+- **代码已完成 V1 至 V3**：`/home/jetson/yahboomcar_ws/src/maze_explorer` 已全量实现，V3 验收 pytest 99/99、`colcon build` 通过；`rebuild` 分支完成注释与命名规范化，风格检查全仓清零（2026-10-08），实现状态与复验清单见 `AGENTS.md` §10。

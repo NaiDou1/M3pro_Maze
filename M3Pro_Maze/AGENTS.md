@@ -205,6 +205,109 @@ simplePID.compute(target, current) / .reset()
 - 所有 `time.sleep` 驱动的机械臂动作改为**状态机 + 超时判定**，便于中断与压缩节拍
 - 失败处理：抓取失败自动重试 1 次，二次失败登记为待办继续探索，**不阻塞整体流程**
 
+### 6.3 命名规范
+
+基线为 PEP 8，本节是项目补充，冲突时以本节为准。
+
+| 类别 | 规则 | 正例 | 反例 |
+|---|---|---|---|
+| 模块 | `snake_case`，模块名即节点名 | `motion_controller` | — |
+| 类、枚举 | `CapWords` | `MotionController`、`BlockColor` | `motion_controller` |
+| 函数、方法、变量 | `snake_case` | `advance_one_cell` | `advanceCell` |
+| 模块级常量 | `UPPER_SNAKE` | `LASER_SECTOR_HALF_WIDTH_DEG` | — |
+| 私有成员 | `_` 前缀 | `_sensor_age` | — |
+| 布尔 | `is_` `has_` `need_` `can_` `should_` 开头 | `is_front_blocked` | `front_block` |
+| 缩写与位姿分量 | 仅限白名单，白名单外一律写全称 | `odom` `yaw` `pid` `hsv` `rgbd` `cmd` `rc` `ik` `fk` `dt`，几何位姿分量 `x` `y` `z` `roll` `pitch` | `dist` 必须写 `distance` |
+
+**单位后缀**：数值变量以单位结尾，单位取自下表，跨文件一致。
+
+| 后缀 | 单位 | 后缀 | 单位 | 后缀 | 单位 |
+|---|---|---|---|---|---|
+| `_m` | 米 | `_s` | 秒 | `_ms` | 毫秒 |
+| `_deg` | 度 | `_rad` | 弧度 | `_rad_s` | 弧度每秒 |
+| `_m_s` | 米每秒 | `_px` | 像素 | `_hz` | 赫兹 |
+| `_norm` | 归一化无量纲 | `_ratio` | 比值 | `_count` | 个数 |
+
+**语义后缀**：阈值 `_tolerance`、允许上限 `_limit` 或 `_max`、超时 `_timeout`、起始时刻 `_start_time`、结束时刻 `_end_time`、持续时长 `_duration`。
+
+**禁止单字母名**：循环计数 `i` `j` `k`、数学推导中间量与缩写白名单中的位姿分量 `x` `y` `z` 除外，且须在同一行注释写明用途；`roll` `pitch` 不受本条限制。
+
+**本轮重命名对照**：全仓统一执行，文档中的符号引用同步更新，Jetson 路径不改。
+
+| 旧名 | 新名 | 依据 |
+|---|---|---|
+| `_base` | `_base_driver` | 持有类型 `BaseDriver` |
+| `_sensors` | `_sensor_hub` | 持有类型 `SensorHub` |
+| `_line` | `_line_detector` | 持有类型 `LineDetector` |
+| `t0` | `start_time` | 起始时刻 |
+| `obs` | `line_observation` | 黑线检测结果 |
+| `wz` | `angular_velocity` | 角速度，单位 `rad_s` |
+| `v` | `lateral_speed` | 横移速度，单位 `m_s` |
+| `d` | `front_distance` | 前方距离，单位 `m` |
+| `r` | `clear_range_m` | 开口判定阈值，单位 `m` |
+| `err` | `heading_error` | 航向误差，单位 `rad` |
+
+### 6.4 注释与 docstring 规范
+
+四条硬规则，违反任意一条即不合格：
+
+| 规则 | 判据 |
+|---|---|
+| 解释因果，不解释动作 | 注释中禁止出现「改、新增、修复、本次、曾经、原来、之前」等时间性动词。只写为什么必须这样、不这样会怎样 |
+| 时间无关 | 删掉日期后注释仍完整成立。证据写实测数值与判据，不写日期 |
+| 禁止一切括号 | 注释与 docstring 中 `()`、`（）`、`[]`、`【】` 一律禁止。运行时日志、异常消息、终端输出不在本条范围 |
+| 无 emoji、无装饰符号 | 中文、数字、ASCII 标点、数学符号 `≤ ≥ ± ×`、单位符号可用；仅可视化输出的数据字符如 `↑` 豁免 |
+
+反例与正例：
+
+| 类型 | 反例 | 正例 |
+|---|---|---|
+| 时间性 | 「本次修复转向符号错误」 | 「`steer_sign` 决定偏差符号到转向角速度的映射，符号取反使车持续偏离黑线直至丢线停车」 |
+| 带日期 | `# 2026-10-04 实测首帧 1.88s` | `# 宽限取 2.0 s，覆盖 RGB-D 首帧同步实测最坏值 1.88 s` |
+| 带括号 | `激光保鲜阈值（秒）` | `激光保鲜阈值，单位 s` |
+
+**括号替代写法**：
+
+| 用途 | 禁止 | 替代 |
+|---|---|---|
+| 单位 | `容差（rad）` | 数值后空格接单位：`容差 0.0873 rad` |
+| 参数说明 | `:param t: 超时（秒）` | `:param t: 超时，单位 s` |
+| 补充说明 | `否则丢线（保护失效）` | 另起一句，或破折号：`否则丢线停车——保护退化为放任` |
+| 符号引用 | `调用 advance() 后` | 双反引号：``调用 ``advance`` 后`` |
+| 取值范围 | `取值 [0, 1]` | `取值区间 0 到 1`，或 `不得小于 0` |
+| 默认值 | `默认值(12.0)` | `默认 12.0 s` |
+
+**覆盖范围**：模块 docstring、类 docstring、全部公有方法与函数，含 `__init__` 的参数说明、`main`、测试函数的一句话目的。私有方法一句话。公有函数参数与返回值必须标注类型。
+
+**每个参数与关键属性必须给出**：单位、取值区间、默认值及其依据、越界行为。
+
+**强制手段**：`test/test_docstring_style.py` 用 `ast` 与 `tokenize` 扫描 `maze_explorer`、`test`、`launch` 三个目录的 docstring 与行注释，并按行扫描 `config` 下 yaml 与 `scripts` 下 shell 的注释，命中中英文括号、`YYYY-MM-DD` 日期、emoji 码点即测试失败。
+
+### 6.5 取值域表达
+
+| 场景 | 写法 | 本仓实例 |
+|---|---|---|
+| 字符串取值域，会被迭代、作字典键、或进出 ROS 参数与 yaml | `maze_explorer._compat.StrEnum` | `Heading`、`BlockColor`、`CalibMode`、`SensorKind` |
+| 状态机，只与枚举成员比较 | `enum.Enum` + `auto()` | `MissionState`、`GraspState` |
+| 代码内固定字面量，赋值点少于 3 处 | `typing.Literal` | `kin_name: Literal['ik', 'fk']` |
+| 数值取值域 | 模块级 `UPPER_SNAKE` 常量，配值域 docstring，含单位与依据 | `LASER_SECTOR_HALF_WIDTH_DEG` |
+
+`_compat.StrEnum` 继承自 `str`，成员与原字符串在字典键、比较、f-string 中等价，取值域由解释器在构造时强制，非法值抛 `ValueError`。
+
+### 6.6 检查器与文档生成
+
+| 工具 | 配置位置 | 用法 |
+|---|---|---|
+| `pydocstyle` | 代码仓 `setup.cfg` 的 `[pydocstyle]` | `python3 -m pydocstyle maze_explorer test` |
+| docstring 风格强制 | `test/test_docstring_style.py` | `pytest test -q` 一并执行 |
+| API 文档生成 | 代码仓 `docs/conf.py`，Sphinx + autodoc | `python3 -m sphinx -b html docs docs/_build` |
+| ROS 过检 | 无配置文件 | Jetson 上 `colcon test --packages-select maze_explorer` |
+
+- `pydocstyle` 采用 `convention = pep257` 并 `add-ignore = D400,D415`：pydocstyle 只认 ASCII 句点，中文句号会被判首行缺终止符
+- `ament_pep257` 是否读取 `setup.cfg` 的该配置**待验证**，未验证前以 `setup.cfg` 的直接运行结果为准
+- `pydocstyle` 覆盖 `maze_explorer` 与 `test` 两目录：pydocstyle 6.3.0 按本配置实跑零违规（2026-10-08），测试函数、测试替身与调试节点的 docstring 缺失项及首词大写问题已补齐
+- 风格检查器的扫描范围为 `maze_explorer`、`test`、`launch` 的 Python 文件与 `config`、`scripts` 的注释行，井号前非空白时视为取值而非注释，避免把取值里的井号误判为注释
+
 ---
 
 ## 7. 目录结构
@@ -216,11 +319,14 @@ simplePID.compute(target, current) / .reset()
 │                     hsv_params.yaml（黑线+四色阈值）
 │                     arm_poses.yaml（巡线/抓取/放置位姿、包络）
 ├── launch/           maze_bringup.launch.py
-├── maze_explorer/    base_driver / sensors / line_detector / block_detector
-│                     grid_mapper / dfs_planner / motion_controller
-│                     arm_controller / grasp_fsm / mission_manager
-│                     score_logger / calibration_tool
-└── scripts/          run_maze.sh（含 rosbag 录制）
+├── maze_explorer/    _compat / base_driver / sensors / line_detector
+│                     block_detector / grid_mapper / dfs_planner
+│                     motion_controller / arm_controller / grasp_fsm
+│                     mission_manager / run_entry / calib_entry
+│                     calibration_tool
+├── test/             六个功能测试与 test_docstring_style 风格检查
+├── docs/             Sphinx autodoc 骨架
+└── scripts/          run_maze.sh（一键启动）
 ```
 
 文档：`AGENTS.md`（本文件）、`PLAN.md`（实施方案）、`ARCHITECTURE.md`（架构与依赖）、
@@ -336,7 +442,7 @@ git bundle verify ~/maze_backups/maze_explorer-snapshot-2026-10-05.bundle
 
 ### 10.1 实现状态
 
-代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复与 V3 安全保护。当前：**pytest 99/99 通过**、`colcon build` 通过、无硬件启动烟测通过。
+代码仓库 `/home/jetson/yahboomcar_ws/src/maze_explorer` 已完成 V1 全量实现、V2 缺陷修复、V3 安全保护与 rebuild 注释规范化。V3 验收：**pytest 99/99 通过**、`colcon build` 通过、无硬件启动烟测通过。rebuild 验收（2026-10-08）：`python3 test/test_docstring_style.py` 全仓清零，五个纯算法测试文件离线复跑 89 项通过；`test_perception` 的 10 项依赖真实 cv2，pytest 全量待 Jetson 复跑。
 
 | 层 | 模块 | 状态 |
 |---|---|---|
@@ -360,7 +466,7 @@ ros2 run maze_explorer maze_run --check-only    # 只自检不运动，首次务
 
 # 入口 B：现场标定（无参数进菜单，也可直达）
 ros2 run maze_explorer maze_calib
-ros2 run maze_explorer maze_calib hsv           # 或 line_pose / motion
+ros2 run maze_explorer maze_calib hsv           # 或 line_pose / motion / follow
 ```
 
 其余 6 个入口（`mission_manager`、`calibration_tool`、`line_detector`、`block_detector`、`grid_mapper`、`arm_controller`）保留作调试用途。
@@ -395,13 +501,13 @@ executor 里主线程的 spin。完整审计与残留风险见 `SAFETY.md`。
 
 | 机制 | 位置 | 语义 |
 |---|---|---|
-| `CommandWatchdog` | `base_driver.py:46` | **独立线程**，非零速度指令超过 `cmd_watchdog_timeout`（0.5s）未被刷新 → 强制归零并 WARN。不经过 executor，故主线程阻塞/executor 卡死时仍有效；触发次数见 `BaseDriver.watchdog_trips` |
-| `SensorHub.scan_age()` | `sensors.py:122` | 激光保鲜度（秒），无数据为 `inf`。**必须先查保鲜度再相信测距**：激光失效时 `sector_min_range` 返回 `None`，而开口判定与碰撞保护都把 `None` 当"通畅" |
-| `MotionController.sensors_ok()` / `_stop_if_unhealthy()` | `motion_controller.py:177,188` | 激光年龄 > `scan_timeout`（0.5s）→ 禁止一切移动；`need_vision` 时相机年龄 > `vision_timeout`（2.0s）→ 禁止前进 |
-| `advance()` 门禁 | `motion_controller.py:236` | **动作前 + 每个控制周期**各查一次；前进要求激光+相机，后退只要求激光 |
-| `turn_to_heading()` / `strafe()` 门禁 | `motion_controller.py:325,367` | 动作前查激光，失效则不启动（避免把车停在半路） |
-| `_run_explore()` 门禁 | `mission_manager.py:473` | 勘测路口前等待激光恢复 `sensor_wait_timeout`（3s）；仍失效 → FAULT。防止把"失效"写成拓扑里的假开口 |
-| `wait_until_healthy()` 宽限 | `motion_controller.py:194` | 失效后先自旋等待恢复（`sensor_recover_wait` 2.0s），仍失效才放弃动作；等待期间先停车 |
+| `CommandWatchdog` | `base_driver.py:85` | **独立线程**，非零速度指令超过 `cmd_watchdog_timeout`（0.5s）未被刷新 → 强制归零并 WARN。不经过 executor，故主线程阻塞/executor 卡死时仍有效；触发次数见 `BaseDriver.watchdog_trips` |
+| `SensorHub.scan_age()` | `sensors.py:162` | 激光保鲜度（秒），无数据为 `inf`。**必须先查保鲜度再相信测距**：激光失效时 `sector_min_range` 返回 `None`，而开口判定与碰撞保护都把 `None` 当"通畅" |
+| `MotionController.sensors_ok()` / `_stop_if_unhealthy()` | `motion_controller.py:294,330` | 激光年龄 > `scan_timeout`（0.5s）→ 禁止一切移动；`need_vision` 时相机年龄 > `vision_timeout`（2.0s）→ 禁止前进 |
+| `advance()` 门禁 | `motion_controller.py:422,453` | **动作前 + 每个控制周期**各查一次；前进要求激光+相机，后退只要求激光 |
+| `turn_to_heading()` / `strafe()` 门禁 | `motion_controller.py:530,588` | 动作前查激光，失效则不启动（避免把车停在半路） |
+| `_run_explore()` 门禁 | `mission_manager.py:431,627` | 勘测路口前等待激光恢复 `sensor_wait_timeout`（3s）；仍失效 → FAULT。防止把"失效"写成拓扑里的假开口 |
+| `wait_until_healthy()` 宽限 | `motion_controller.py:306` | 失效后先自旋等待恢复（`sensor_recover_wait` 2.0s），仍失效才放弃动作；等待期间先停车 |
 | INIT 等相机首帧 | `mission_manager.py` `_run_init` | 进 EXPLORE 前等同步 RGB-D（`init_sensor_timeout` 15s），等不到 → FAULT |
 | 失败重试退避 | `mission_manager.py` `_retry_pause` | 走格/转向失败后 0.5s 退避再重试（`retry_pause_sec`） |
 
